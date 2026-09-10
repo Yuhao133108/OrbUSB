@@ -1,0 +1,15 @@
+Details:
+ID: 00200000
+Manufacturer: Realtek
+Name: RTL9210C
+Type: Storage
+
+Passthrough:
+Machine: Not attached
+
+Info:
+Vendor/Product ID: 0bda:9210
+Serial: REDACTED-FIXTURE-1
+Class: Mass storage
+Speed: USB 3.1 (10 Gbps)
+Location: Bus 0, Device 1

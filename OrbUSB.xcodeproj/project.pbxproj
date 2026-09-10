@@ -1,0 +1,548 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 70;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		B10000000000000000000001 /* USBStorageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000002 /* USBStorageService.swift */; };
+		A00000000000000000000014 /* OrbUSBApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000012 /* OrbUSBApp.swift */; };
+		A00000000000000000000015 /* MenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000013 /* MenuBarView.swift */; };
+		E40E27BB3050811300895A3F /* Logger.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40E27BA3050811300895A3F /* Logger.swift */; };
+		E40E27BD3050811700895A3F /* OrbCLI.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40E27BC3050811700895A3F /* OrbCLI.swift */; };
+		E40E27BF3050817A00895A3F /* USBDevice.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40E27BE3050817A00895A3F /* USBDevice.swift */; };
+		E40E27C1305081D900895A3F /* OrbStackUSBService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40E27C0305081D900895A3F /* OrbStackUSBService.swift */; };
+		E40E27C3305081DF00895A3F /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40E27C2305081DF00895A3F /* AppState.swift */; };
+		E40E27C53050824200895A3F /* DeviceDetailsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40E27C43050824200895A3F /* DeviceDetailsView.swift */; };
+		E40E27C73050824500895A3F /* DeviceRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40E27C63050824500895A3F /* DeviceRow.swift */; };
+		E40E27E330509B9D00895A3F /* MenuWindowObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40E27E230509B9D00895A3F /* MenuWindowObserver.swift */; };
+		E40E27E530509C0000895A3F /* EmptyStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40E27E430509C0000895A3F /* EmptyStateView.swift */; };
+		E40E27E830509C9100895A3F /* Preferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40E27E730509C9100895A3F /* Preferences.swift */; };
+		E40E27EA30509C9300895A3F /* USBMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40E27E930509C9300895A3F /* USBMonitor.swift */; };
+		E40E27EC30509C9E00895A3F /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40E27EB30509C9E00895A3F /* SettingsView.swift */; };
+		E40E27FF30509F4D00895A3F /* USBParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40E27FE30509F4D00895A3F /* USBParser.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		B10000000000000000000003 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A00000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A00000000000000000000005;
+			remoteInfo = OrbUSB;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		B10000000000000000000002 /* USBStorageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USBStorageService.swift; sourceTree = "<group>"; };
+		A00000000000000000000009 /* OrbUSB.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OrbUSB.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A00000000000000000000012 /* OrbUSBApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbUSBApp.swift; sourceTree = "<group>"; };
+		A00000000000000000000013 /* MenuBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarView.swift; sourceTree = "<group>"; };
+		E40E27BA3050811300895A3F /* Logger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Logger.swift; sourceTree = "<group>"; };
+		E40E27BC3050811700895A3F /* OrbCLI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbCLI.swift; sourceTree = "<group>"; };
+		E40E27BE3050817A00895A3F /* USBDevice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USBDevice.swift; sourceTree = "<group>"; };
+		E40E27C0305081D900895A3F /* OrbStackUSBService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbStackUSBService.swift; sourceTree = "<group>"; };
+		E40E27C2305081DF00895A3F /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
+		E40E27C43050824200895A3F /* DeviceDetailsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceDetailsView.swift; sourceTree = "<group>"; };
+		E40E27C63050824500895A3F /* DeviceRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceRow.swift; sourceTree = "<group>"; };
+		E40E27CC3050825B00895A3F /* OrbUSBTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OrbUSBTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		E40E27E230509B9D00895A3F /* MenuWindowObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuWindowObserver.swift; sourceTree = "<group>"; };
+		E40E27E430509C0000895A3F /* EmptyStateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyStateView.swift; sourceTree = "<group>"; };
+		E40E27E730509C9100895A3F /* Preferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Preferences.swift; sourceTree = "<group>"; };
+		E40E27E930509C9300895A3F /* USBMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USBMonitor.swift; sourceTree = "<group>"; };
+		E40E27EB30509C9E00895A3F /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		E40E27FE30509F4D00895A3F /* USBParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USBParser.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		E40E27CD3050825B00895A3F /* OrbUSBTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = OrbUSBTests; sourceTree = "<group>"; };
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A0000000000000000000000C /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E40E27C93050825B00895A3F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A00000000000000000000003 = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000008 /* OrbUSB */,
+				E40E27CD3050825B00895A3F /* OrbUSBTests */,
+				A00000000000000000000004 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A00000000000000000000004 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000009 /* OrbUSB.app */,
+				E40E27CC3050825B00895A3F /* OrbUSBTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000008 /* OrbUSB */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000010 /* App */,
+				A00000000000000000000011 /* Views */,
+				E40E27B73050810700895A3F /* Services */,
+				E40E27B83050810B00895A3F /* Utilities */,
+				E40E27B93050810F00895A3F /* Models */,
+				E40E27E630509C8D00895A3F /* Settings */,
+			);
+			path = OrbUSB;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000010 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000012 /* OrbUSBApp.swift */,
+				E40E27C2305081DF00895A3F /* AppState.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000011 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000013 /* MenuBarView.swift */,
+				E40E27C43050824200895A3F /* DeviceDetailsView.swift */,
+				E40E27C63050824500895A3F /* DeviceRow.swift */,
+				E40E27E230509B9D00895A3F /* MenuWindowObserver.swift */,
+				E40E27E430509C0000895A3F /* EmptyStateView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		E40E27B73050810700895A3F /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000002 /* USBStorageService.swift */,
+				E40E27BC3050811700895A3F /* OrbCLI.swift */,
+				E40E27C0305081D900895A3F /* OrbStackUSBService.swift */,
+				E40E27E930509C9300895A3F /* USBMonitor.swift */,
+				E40E27FE30509F4D00895A3F /* USBParser.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		E40E27B83050810B00895A3F /* Utilities */ = {
+			isa = PBXGroup;
+			children = (
+				E40E27BA3050811300895A3F /* Logger.swift */,
+			);
+			path = Utilities;
+			sourceTree = "<group>";
+		};
+		E40E27B93050810F00895A3F /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				E40E27BE3050817A00895A3F /* USBDevice.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		E40E27E630509C8D00895A3F /* Settings */ = {
+			isa = PBXGroup;
+			children = (
+				E40E27E730509C9100895A3F /* Preferences.swift */,
+				E40E27EB30509C9E00895A3F /* SettingsView.swift */,
+			);
+			path = Settings;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A00000000000000000000005 /* OrbUSB */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A0000000000000000000000A /* Build configuration list for PBXNativeTarget "OrbUSB" */;
+			buildPhases = (
+				A0000000000000000000000B /* Sources */,
+				A0000000000000000000000C /* Frameworks */,
+				A0000000000000000000000D /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = OrbUSB;
+			productName = OrbUSB;
+			productReference = A00000000000000000000009 /* OrbUSB.app */;
+			productType = "com.apple.product-type.application";
+		};
+		E40E27CB3050825B00895A3F /* OrbUSBTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E40E27D03050825B00895A3F /* Build configuration list for PBXNativeTarget "OrbUSBTests" */;
+			buildPhases = (
+				E40E27C83050825B00895A3F /* Sources */,
+				E40E27C93050825B00895A3F /* Frameworks */,
+				E40E27CA3050825B00895A3F /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				B10000000000000000000004 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				E40E27CD3050825B00895A3F /* OrbUSBTests */,
+			);
+			name = OrbUSBTests;
+			packageProductDependencies = (
+			);
+			productName = OrbUSBTests;
+			productReference = E40E27CC3050825B00895A3F /* OrbUSBTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXTargetDependency section */
+		B10000000000000000000004 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A00000000000000000000005 /* OrbUSB */;
+			targetProxy = B10000000000000000000003 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin PBXProject section */
+		A00000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastSwiftUpdateCheck = 2700;
+				TargetAttributes = {
+					E40E27CB3050825B00895A3F = {
+						CreatedOnToolsVersion = 27.0;
+					};
+				};
+			};
+			buildConfigurationList = A00000000000000000000002 /* Build configuration list for PBXProject "OrbUSB" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = A00000000000000000000003;
+			productRefGroup = A00000000000000000000004 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A00000000000000000000005 /* OrbUSB */,
+				E40E27CB3050825B00895A3F /* OrbUSBTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A0000000000000000000000D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E40E27CA3050825B00895A3F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A0000000000000000000000B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B10000000000000000000001 /* USBStorageService.swift in Sources */,
+				A00000000000000000000014 /* OrbUSBApp.swift in Sources */,
+				E40E27FF30509F4D00895A3F /* USBParser.swift in Sources */,
+				E40E27C73050824500895A3F /* DeviceRow.swift in Sources */,
+				E40E27E830509C9100895A3F /* Preferences.swift in Sources */,
+				E40E27E330509B9D00895A3F /* MenuWindowObserver.swift in Sources */,
+				E40E27BF3050817A00895A3F /* USBDevice.swift in Sources */,
+				E40E27C3305081DF00895A3F /* AppState.swift in Sources */,
+				E40E27C53050824200895A3F /* DeviceDetailsView.swift in Sources */,
+				E40E27EC30509C9E00895A3F /* SettingsView.swift in Sources */,
+				E40E27BB3050811300895A3F /* Logger.swift in Sources */,
+				E40E27BD3050811700895A3F /* OrbCLI.swift in Sources */,
+				A00000000000000000000015 /* MenuBarView.swift in Sources */,
+				E40E27C1305081D900895A3F /* OrbStackUSBService.swift in Sources */,
+				E40E27E530509C0000895A3F /* EmptyStateView.swift in Sources */,
+				E40E27EA30509C9300895A3F /* USBMonitor.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E40E27C83050825B00895A3F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		A00000000000000000000006 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		A00000000000000000000007 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		A0000000000000000000000E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_TESTABILITY = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = OrbUSB;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_LSUIElement = YES;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.orbusb.OrbUSB;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Debug;
+		};
+		A0000000000000000000000F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_TESTABILITY = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = OrbUSB;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_LSUIElement = YES;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.orbusb.OrbUSB;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Release;
+		};
+		E40E27D13050825B00895A3F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.orbusb.OrbUSBTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/OrbUSB.app/Contents/MacOS/OrbUSB";
+				XROS_DEPLOYMENT_TARGET = 27.0;
+			};
+			name = Debug;
+		};
+		E40E27D23050825B00895A3F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.orbusb.OrbUSBTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/OrbUSB.app/Contents/MacOS/OrbUSB";
+				XROS_DEPLOYMENT_TARGET = 27.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A00000000000000000000002 /* Build configuration list for PBXProject "OrbUSB" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A00000000000000000000006 /* Debug */,
+				A00000000000000000000007 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A0000000000000000000000A /* Build configuration list for PBXNativeTarget "OrbUSB" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A0000000000000000000000E /* Debug */,
+				A0000000000000000000000F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E40E27D03050825B00895A3F /* Build configuration list for PBXNativeTarget "OrbUSBTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E40E27D13050825B00895A3F /* Debug */,
+				E40E27D23050825B00895A3F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = A00000000000000000000001 /* Project object */;
+}

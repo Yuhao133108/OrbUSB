@@ -1,0 +1,12 @@
+.DS_Store
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+# Real USB captures contain device serial numbers; keep local only.
+Tests/Fixtures/*real*
+Tests/Fixtures/list-format-json.json
+.build/
+.swiftpm/
+# Project documentation is kept locally only.
+Docs/

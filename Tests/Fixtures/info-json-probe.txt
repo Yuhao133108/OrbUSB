@@ -1,0 +1,7 @@
+Error: unknown shorthand flag: 'f' in -f
+Usage:
+  orb usb info ID [flags]
+
+Flags:
+  -h, --help   help for info
+

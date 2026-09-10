@@ -1,0 +1,15 @@
+Details:
+ID: 01100000
+Manufacturer: Apple, Inc.
+Name: EarPods
+Type: Audio
+
+Passthrough:
+Machine: default
+
+Info:
+Vendor/Product ID: 05ac:110b
+Serial: REDACTED-FIXTURE-2
+Class: Miscellaneous
+Speed: USB 1.1 (12 Mbps)
+Location: Bus 1, Device 1

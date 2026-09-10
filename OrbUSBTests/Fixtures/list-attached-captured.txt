@@ -1,0 +1,2 @@
+00200000  0bda:9210  Realtek RTL9210C     
+01100000  05ac:110b  Apple, Inc. EarPods  attached

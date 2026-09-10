@@ -1,0 +1,88 @@
+{
+  "devices": [
+    {
+      "bus_id": "00200000",
+      "path": "RTL9210C",
+      "manufacturer": "Realtek",
+      "serial_number": "REDACTED-FIXTURE-1",
+      "bus_num": 0,
+      "dev_num": 1,
+      "speed": 6,
+      "vendor_id": 3034,
+      "product_id": 37392,
+      "bcd_device": 8759,
+      "class": 0,
+      "sub_class": 0,
+      "protocol": 0,
+      "configuration": 0,
+      "num_configurations": 1,
+      "interfaces": [
+        {
+          "class": 8,
+          "sub_class": 6,
+          "protocol": 98
+        }
+      ],
+      "category": "massStorage"
+    },
+    {
+      "bus_id": "01100000",
+      "path": "EarPods",
+      "manufacturer": "Apple, Inc.",
+      "serial_number": "REDACTED-FIXTURE-2",
+      "bus_num": 1,
+      "dev_num": 1,
+      "speed": 2,
+      "vendor_id": 1452,
+      "product_id": 4363,
+      "bcd_device": 9857,
+      "class": 239,
+      "sub_class": 2,
+      "protocol": 1,
+      "configuration": 0,
+      "num_configurations": 3,
+      "interfaces": [
+        {
+          "class": 1,
+          "sub_class": 1,
+          "protocol": 48
+        },
+        {
+          "class": 1,
+          "sub_class": 2,
+          "protocol": 48
+        },
+        {
+          "class": 1,
+          "sub_class": 2,
+          "protocol": 48
+        },
+        {
+          "class": 3,
+          "sub_class": 0,
+          "protocol": 0
+        },
+        {
+          "class": 3,
+          "sub_class": 0,
+          "protocol": 0
+        }
+      ],
+      "category": "audio"
+    }
+  ],
+  "ports": [
+    {
+      "port": 1,
+      "status": "",
+      "speed": 2,
+      "dev_id": 65537,
+      "socket": "",
+      "bus_id": "01100000",
+      "vendor_id": 1452,
+      "product_id": 4363,
+      "bcd_device": 9857,
+      "serial_number": "REDACTED-FIXTURE-2"
+    }
+  ]
+}
