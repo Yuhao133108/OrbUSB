@@ -18,7 +18,8 @@ struct MenuBarView: View {
                 Spacer()
                 if state.isRefreshing { ProgressView().controlSize(.mini) }
                 Button { state.requestRefresh() } label: { Image(systemName: "arrow.clockwise") }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(QuietUtilityButtonStyle(iconOnly: true))
+                    .controlSize(.small)
                     .help("Refresh USB devices")
                     .accessibilityLabel("Refresh USB devices")
                     .disabled(state.isRefreshing)
@@ -28,7 +29,9 @@ struct MenuBarView: View {
                 HStack(alignment: .top) {
                     Label(error, systemImage: "exclamationmark.triangle").font(.caption)
                     Spacer(minLength: 4)
-                    Button("Retry") { state.requestRefresh() }.controlSize(.small)
+                    Button("Retry") { state.requestRefresh() }
+                        .utilityGlassButton()
+                        .controlSize(.small)
                 }
                 .help(state.diagnostic)
                 .padding(8)
@@ -86,7 +89,6 @@ struct MenuBarView: View {
         .buttonStyle(.plain)
         .padding(12)
         .frame(width: 350)
-        .background(.regularMaterial)
         .background {
             if observesMenu { MenuWindowObserver(state: state).frame(width: 0, height: 0) }
         }
@@ -113,6 +115,54 @@ struct MenuBarView: View {
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 2)
+    }
+}
+
+// A small, semantic surface without the native glass push button's keyline.
+struct QuietUtilityButtonStyle: ButtonStyle {
+    var iconOnly = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        Surface(configuration: configuration, iconOnly: iconOnly)
+    }
+
+    private struct Surface: View {
+        let configuration: ButtonStyleConfiguration
+        let iconOnly: Bool
+        @State private var hovering = false
+        @Environment(\.isEnabled) private var isEnabled
+        @Environment(\.colorSchemeContrast) private var contrast
+
+        private var surfaceOpacity: Double {
+            if !isEnabled { return iconOnly ? 0 : 0.035 }
+            if configuration.isPressed { return contrast == .increased ? 0.22 : 0.12 }
+            if hovering { return contrast == .increased ? 0.16 : 0.08 }
+            return iconOnly ? 0 : contrast == .increased ? 0.10 : 0.045
+        }
+
+        var body: some View {
+            configuration.label
+                .frame(width: iconOnly ? 32 : 56, height: 22)
+                .foregroundStyle(isEnabled ? .primary : .secondary)
+                .background {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Color.primary.opacity(surfaceOpacity))
+                }
+                .contentShape(Rectangle())
+                .onHover { hovering = $0 }
+        }
+    }
+}
+
+// Keep native control behavior on both sides of the macOS 26 availability boundary.
+extension View {
+    @ViewBuilder
+    func utilityGlassButton() -> some View {
+        if #available(macOS 26.0, *) {
+            self.buttonStyle(.glass)
+        } else {
+            self.buttonStyle(.bordered)
+        }
     }
 }
 

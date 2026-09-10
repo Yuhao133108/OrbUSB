@@ -14,15 +14,15 @@ struct DeviceRow: View {
                 Button { expanded.toggle() } label: {
                     HStack(spacing: 10) {
                         Image(systemName: device.symbol)
-                            .font(.system(size: 18))
+                            .font(.title3)
                             .foregroundStyle(device.state == .attached ? Color.accentColor : .secondary)
                             .frame(width: 22)
                         VStack(alignment: .leading, spacing: 3) {
                             HStack(spacing: 4) {
                                 if state.preferences.isFavorite(device) {
-                                    Image(systemName: "star.fill").font(.system(size: 9)).foregroundStyle(.secondary)
+                                    Image(systemName: "star.fill").font(.caption2).foregroundStyle(.secondary)
                                 }
-                                Text(device.name).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                                Text(device.name).font(.body.weight(.medium)).lineLimit(1)
                             }
                             if state.preferences.showDeviceIDs || device.state == .forwarded {
                                 HStack(spacing: 5) {
@@ -47,12 +47,13 @@ struct DeviceRow: View {
                 .help(device.name)
                 .accessibilityLabel("\(device.name), \(device.state.title), show details")
                 if let operation = state.operation(for: device) {
-                    ProgressView().controlSize(.small).frame(width: 54)
+                    ProgressView().controlSize(.small).frame(width: 64)
                         .accessibilityLabel(operation.phase.rawValue)
                 } else if device.state == .available || device.state == .attached {
                     Button(device.state == .attached ? "Detach" : "Attach") { state.toggle(device, machine: machine) }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(QuietUtilityButtonStyle())
                         .controlSize(.small)
+                        .frame(width: 64)
                         .disabled(state.error != nil)
                         .accessibilityLabel("\(device.state == .attached ? "Detach" : "Attach") \(device.name)")
                 } else {
