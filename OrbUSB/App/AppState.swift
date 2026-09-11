@@ -24,6 +24,7 @@ final class AppState {
     @ObservationIgnored private let monitor = USBMonitor()
     @ObservationIgnored private var hotplugTask: Task<Void, Never>?
     @ObservationIgnored let service: OrbStackUSBService
+    @ObservationIgnored private var operationTasks: [String: Task<Void, Never>] = [:]
     @ObservationIgnored private var polling: Task<Void, Never>?
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
     @ObservationIgnored private var refreshAgain = false
@@ -53,6 +54,7 @@ final class AppState {
 
     func shutdown() {
         closeMenu()
+        operationTasks.values.forEach { $0.cancel() }
         monitor.stop()
         hotplugTask?.cancel()
     }
@@ -129,27 +131,32 @@ final class AppState {
         operations[key] = USBDeviceOperation(device: displayed,
             phase: attaching ? (displayed.isStorage ? .resolvingDisk : .attaching) : .detaching)
         rowErrors[key] = nil
-        Task {
-            defer { operations[key] = nil }
+        operationTasks[key] = Task {
+            defer { operations[key] = nil; operationTasks[key] = nil }
             var failure: String?
             do {
-                // Wait out a pre-existing refresh, then resolve a fresh current device.
-                await refreshTask?.value
-                let currentList = try await service.refresh()
-                devices = currentList
-                guard let current = currentList.first(where: { $0.id == displayed.id }),
-                      current.connectionKey == displayed.connectionKey else {
-                    throw OrbStackError.deviceNotFound
-                }
-                guard current.state == displayed.state else {
-                    throw OrbStackError.commandFailed("Device state changed. Review its current state and try again.")
-                }
                 if attaching {
+                    // Mark pending in the service immediately; CLI refresh before
+                    // this point would leave automount unprotected for its duration.
+                    var current = displayed
+                    if !displayed.isStorage {
+                        let list = try await service.refresh()
+                        guard let fresh = list.first(where: { $0.connectionKey == displayed.connectionKey }),
+                              fresh.state == .available else { throw USBStorageError.stateChanged }
+                        current = fresh
+                    }
                     try await service.attachDevice(current, machine: machine) { phase in
                         self.operations[key]?.phase = phase
                     }
+                } else {
+                    await refreshTask?.value
+                    let currentList = try await service.refresh()
+                    devices = currentList
+                    guard let current = currentList.first(where: { $0.connectionKey == displayed.connectionKey }),
+                          current.state == .attached else { throw USBStorageError.stateChanged }
+                    try Task.checkCancellation()
+                    try await service.detachDevice(id: current.id)
                 }
-                else { try await service.detachDevice(id: current.id) }
             } catch {
                 failure = "\(attaching ? "Attach" : "Detach") failed\n\(error.localizedDescription)"
             }

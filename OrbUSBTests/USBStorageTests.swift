@@ -46,27 +46,27 @@ final class USBStorageTests: XCTestCase {
         XCTAssertThrowsError(try device(serial: nil).resolvedAfterUnmount(in: [device(id: "00300000", serial: nil)]))
     }
 
-    func testUnmountRejectsInvalidOrReusedDiskBeforeRunningCommand() async {
+    func testUnmountRejectsInvalidOrReusedDiskBeforeDiskArbitration() async {
         for disk in [USBStorageDisk(bsdName: "disk8;echo", registryID: 0), .init(bsdName: "disk8", registryID: 0)] {
             do {
                 try await USBStorageService().unmountVolumes(on: [disk])
-                XCTFail("Invalid media must not reach diskutil")
+                XCTFail("Invalid media must not reach Disk Arbitration")
             } catch { XCTAssertTrue(error is USBStorageError) }
         }
     }
 
-    func testStorageAttachUnmountsAllDisksThenUsesNewID() async throws {
-        let fixture = try AttachFixture(before: device(), after: [device(id: "00300000", enumeration: 2)])
+    func testStorageAttachUnmountsAllDisksThenRevalidatesID() async throws {
+        let fixture = try AttachFixture(before: device(), after: [device()])
         defer { fixture.remove() }
         var phases: [USBOperationPhase] = []
         try await fixture.service.attachDevice(device(), machine: "linux") { phases.append($0) }
-        XCTAssertEqual(phases, [.resolvingDisk, .unmountingVolumes, .resolvingUSBID, .attaching])
+        XCTAssertEqual(phases, [.resolvingDisk, .waitingForMount, .unmountingVolumes, .verifyingUnmount, .settling, .resolvingUSBID, .attaching])
         let unmounted = await fixture.storage.unmountedDisks
         XCTAssertEqual(unmounted.map(\.bsdName), ["disk8", "disk9"])
         let calls = try fixture.calls()
-        XCTAssertEqual(calls.last, "usb attach 00300000 -m linux")
+        XCTAssertEqual(calls.last, "usb attach 00200000 -m linux")
         XCTAssertEqual(calls.first, "usb list -f json", "The post-unmount list must precede attach")
-        XCTAssertFalse(calls.contains { $0.hasPrefix("usb attach 00200000") })
+        XCTAssertEqual(calls.filter { $0.hasPrefix("usb attach") }.count, 1)
     }
 
     func testUnmountFailureNeverReresolvesOrAttaches() async throws {
@@ -77,7 +77,7 @@ final class USBStorageTests: XCTestCase {
             try await fixture.service.attachDevice(device(), machine: nil) { phases.append($0) }
             XCTFail("Unmount must fail")
         } catch { XCTAssertEqual(error as? USBStorageError, .unmountFailed("Disk is busy")) }
-        XCTAssertEqual(phases, [.resolvingDisk, .unmountingVolumes])
+        XCTAssertEqual(phases, [.resolvingDisk, .waitingForMount, .unmountingVolumes])
         XCTAssertTrue(try fixture.calls().isEmpty)
     }
 
@@ -108,12 +108,12 @@ final class USBStorageTests: XCTestCase {
     }
 
     func testExistingAttachByIDAlsoPreparesStorage() async throws {
-        let fixture = try AttachFixture(before: device(), after: [device(id: "00300000", enumeration: 2)])
+        let fixture = try AttachFixture(before: device(), after: [device()])
         defer { fixture.remove() }
         try await fixture.service.attachDevice(id: "00200000")
         let disks = await fixture.storage.unmountedDisks
         XCTAssertEqual(disks.count, 2)
-        XCTAssertEqual(try fixture.calls().last, "usb attach 00300000")
+        XCTAssertEqual(try fixture.calls().last, "usb attach 00200000")
     }
 
     func testNonStorageAndDetachSkipDiskPreparation() async throws {
@@ -130,7 +130,175 @@ final class USBStorageTests: XCTestCase {
         XCTAssertTrue(disks.isEmpty)
     }
 
-    #if !SWIFT_PACKAGE
+    func testFailedEFIMountRequiresArbitrationCompletionNotVolumePath() {
+        var lifecycle = USBMountLifecycle()
+        lifecycle.appeared("disk4s1", registryID: 41)
+        lifecycle.mountApproved("disk4s1")
+        // EFI mount fails: no mounted description arrives. Repeated checks alone
+        // must not release the gate, but the DA request completion may do so.
+        XCTAssertFalse(lifecycle.isReady("disk4s1", registryID: 41))
+        XCTAssertFalse(lifecycle.isReady("disk4s1", registryID: 41))
+        lifecycle.arbitrationCompleted("disk4s1", registryID: 41)
+        XCTAssertTrue(lifecycle.isReady("disk4s1", registryID: 41))
+        lifecycle.disappeared("disk4s1")
+        XCTAssertFalse(lifecycle.isReady("disk4s1", registryID: 41))
+        lifecycle.arbitrationCompleted("disk4s1", registryID: 42)
+        XCTAssertFalse(lifecycle.isReady("disk4s1", registryID: 41))
+        XCTAssertTrue(lifecycle.isReady("disk4s1", registryID: 42))
+    }
+
+    func testUnmountPlanIncludesSynthesizedAPFSBeforePhysicalStore() {
+        let physical = USBStorageDisk(bsdName: "disk4", registryID: 40)
+        let container = USBStorageDisk(bsdName: "disk5", registryID: 50)
+        let unrelated = USBStorageDisk(bsdName: "disk3", registryID: 30)
+        let media = [
+            USBStorageWholeMedia(disk: physical, ancestors: [40, 1]),
+            // Container -> physical store partition -> physical whole disk.
+            USBStorageWholeMedia(disk: container, ancestors: [50, 42, 40, 1]),
+            USBStorageWholeMedia(disk: unrelated, ancestors: [30, 2, 1])
+        ]
+        XCTAssertEqual(USBStorageWholeMedia.unmountTargets(physical: [physical], media: media), [container, physical])
+        XCTAssertEqual(USBStorageWholeMedia.unmountTargets(physical: [physical], media: [media[0], media[2]]), [physical])
+    }
+
+    func testProbeAndAutomountMustCompleteBeforePreparation() {
+        var lifecycle = USBMountLifecycle()
+        XCTAssertFalse(lifecycle.isReady("disk8s1", registryID: 1))
+        lifecycle.probing("disk8s1")
+        XCTAssertFalse(lifecycle.isReady("disk8s1", registryID: 1))
+        lifecycle.mountApproved("disk8s1")
+        XCTAssertFalse(lifecycle.isReady("disk8s1", registryID: 1))
+        // Both successful and failed initial automount terminate in appearance.
+        lifecycle.appeared("disk8s1", registryID: 1)
+        XCTAssertTrue(lifecycle.isReady("disk8s1", registryID: 1))
+        lifecycle.mountApproved("disk8s1")
+        XCTAssertFalse(lifecycle.isReady("disk8s1", registryID: 1))
+        lifecycle.mounted("disk8s1")
+        XCTAssertTrue(lifecycle.isReady("disk8s1", registryID: 1))
+        lifecycle.probing("disk8s1")
+        XCTAssertFalse(lifecycle.isReady("disk8s1", registryID: 1))
+    }
+
+    func testMountLifecycleSeparatesVolumesAndRejectsReusedBSDName() {
+        var lifecycle = USBMountLifecycle()
+        lifecycle.appeared("disk8s1", registryID: 1)
+        lifecycle.appeared("disk9s1", registryID: 2)
+        lifecycle.mountApproved("disk8s1")
+        XCTAssertFalse(lifecycle.isReady("disk8s1", registryID: 1))
+        XCTAssertTrue(lifecycle.isReady("disk9s1", registryID: 2))
+        lifecycle.disappeared("disk8s1")
+        XCTAssertFalse(lifecycle.isReady("disk8s1", registryID: 1))
+        lifecycle.appeared("disk8s1", registryID: 3)
+        XCTAssertFalse(lifecycle.isReady("disk8s1", registryID: 1))
+        XCTAssertTrue(lifecycle.isReady("disk8s1", registryID: 3))
+    }
+
+    func testUnmountContinuationTimeoutAndLateCallback() async {
+        var requests = USBUnmountRequests()
+        let disk = USBStorageDisk(bsdName: "disk8", registryID: 123)
+        var token = 0
+        do {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+                token = requests.insert(disk, continuation: continuation)
+                requests.timeout(token)
+                requests.timeout(token)
+            }
+            XCTFail("Timeout must throw")
+        } catch { XCTAssertEqual(error as? USBStorageError, .storageNotReady) }
+        XCTAssertTrue(requests.contains(disk), "Timeout must quarantine unfinished DA work")
+        requests.complete(token, result: .success(()))
+        requests.complete(token, result: .success(()))
+        XCTAssertFalse(requests.contains(disk))
+    }
+
+    func testUnmountContinuationSuccessAndDissenterResumeOnce() async throws {
+        for fails in [false, true] {
+            var requests = USBUnmountRequests()
+            let disk = USBStorageDisk(bsdName: "disk8", registryID: 123)
+            do {
+                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+                    let token = requests.insert(disk, continuation: continuation)
+                    requests.complete(token, result: fails ? .failure(USBStorageError.unmountFailed("busy")) : .success(()))
+                    requests.timeout(token)
+                    requests.complete(token, result: .success(()))
+                }
+                XCTAssertFalse(fails)
+            } catch { XCTAssertEqual(error as? USBStorageError, .unmountFailed("busy")) }
+            XCTAssertFalse(requests.contains(disk))
+        }
+    }
+
+    func testActiveMountBlocksUnmountAndRepeatedAttachAndDetach() async throws {
+        let fixture = try AttachFixture(before: device(), after: [device()])
+        defer { fixture.remove() }
+        await fixture.storage.configure(pauseMount: true)
+        let task = Task { try await fixture.service.attachDevice(device(), machine: nil) { _ in } }
+        try await waitUntil { await fixture.storage.waitingForMount }
+        XCTAssertTrue(try fixture.calls().isEmpty)
+        for _ in 0..<10 {
+            do {
+                try await fixture.service.attachDevice(device(), machine: nil) { _ in }
+                XCTFail("Duplicate attach should be rejected")
+            } catch { XCTAssertEqual(error as? USBStorageError, .operationInProgress) }
+        }
+        do {
+            try await fixture.service.detachDevice(id: device().id)
+            XCTFail("Detach cannot overlap preparation")
+        } catch { XCTAssertEqual(error as? USBStorageError, .operationInProgress) }
+        let before = await fixture.storage.events
+        XCTAssertEqual(before, ["begin", "waitMount"])
+        await fixture.storage.resumeMount()
+        try await task.value
+        let events = await fixture.storage.events
+        XCTAssertEqual(events, ["begin", "waitMount", "unmount", "verify", "final", "end"])
+        XCTAssertEqual(try fixture.calls().filter { $0.hasPrefix("usb attach") }.count, 1)
+        let pending = await fixture.storage.pending
+        XCTAssertFalse(pending)
+    }
+
+    func testPreparationFailuresNeverAttachAndAlwaysReleasePending() async throws {
+        for stage in 0..<3 {
+            let fixture = try AttachFixture(before: device(), after: [device()])
+            defer { fixture.remove() }
+            await fixture.storage.configure(wait: stage == 0 ? .storageNotReady : nil,
+                verify: stage == 1 ? .diskStillMounted : nil, final: stage == 2 ? .identityChanged : nil)
+            do {
+                try await fixture.service.attachDevice(device(), machine: nil) { _ in }
+                XCTFail("Unconfirmed host state must not attach")
+            } catch { XCTAssertTrue(error is USBStorageError) }
+            XCTAssertFalse(try fixture.calls().contains { $0.hasPrefix("usb attach") })
+            let pending = await fixture.storage.pending
+            XCTAssertFalse(pending)
+            // Retry proves the transaction lock and pending set were released.
+            await fixture.storage.configure()
+            try await fixture.service.attachDevice(device(), machine: nil) { _ in }
+        }
+    }
+
+    func testCancellationWhileUnmountCallbackPendingNeverAttaches() async throws {
+        let fixture = try AttachFixture(before: device(), after: [device()], pauseUnmount: true)
+        defer { fixture.remove() }
+        let task = Task { try await fixture.service.attachDevice(device(), machine: nil) { _ in } }
+        try await waitUntil { await fixture.storage.isPaused }
+        task.cancel()
+        await fixture.storage.resume()
+        do { try await task.value; XCTFail("Cancelled operation must fail") }
+        catch is CancellationError { }
+        XCTAssertFalse(try fixture.calls().contains { $0.hasPrefix("usb attach") })
+        let pending = await fixture.storage.pending
+        XCTAssertFalse(pending)
+    }
+
+    func testReenumerationWithSameSerialNeverTransfersOwnership() async throws {
+        let fixture = try AttachFixture(before: device(), after: [device(id: "00300000", enumeration: 2)])
+        defer { fixture.remove() }
+        do {
+            try await fixture.service.attachDevice(device(), machine: nil) { _ in }
+            XCTFail("A different connection must not attach")
+        } catch { XCTAssertEqual(error as? USBStorageError, .identityChanged) }
+        XCTAssertFalse(try fixture.calls().contains { $0.hasPrefix("usb attach") })
+    }
+
     private func waitUntil(_ condition: () async -> Bool) async throws {
         let deadline = Date().addingTimeInterval(6)
         while !(await condition()) && Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
@@ -138,6 +306,7 @@ final class USBStorageTests: XCTestCase {
         XCTAssertTrue(satisfied, "Timed out waiting for operation")
     }
 
+    #if !SWIFT_PACKAGE
     func testAppStateUnmountFailureReturnsAvailableWithErrorAndAllowsRetry() async throws {
         let fixture = try AttachFixture(before: device(), after: [device()], unmountError: .unmountFailed("Disk is busy"))
         defer { fixture.remove() }
@@ -148,7 +317,7 @@ final class USBStorageTests: XCTestCase {
         XCTAssertEqual(state.operation(for: device())?.phase, .resolvingDisk)
         try await waitUntil { state.operations.isEmpty }
         XCTAssertEqual(state.devices.first?.state, .available)
-        XCTAssertTrue(state.rowErrors[device().connectionKey]?.contains("Disk is busy") == true)
+        XCTAssertTrue(state.rowErrors[device().connectionKey]?.contains("Close files") == true)
         XCTAssertFalse(try fixture.calls().contains { $0.hasPrefix("usb attach") })
         await fixture.storage.setUnmountError(nil)
         state.toggle(device())
@@ -158,8 +327,8 @@ final class USBStorageTests: XCTestCase {
         XCTAssertTrue(state.rowErrors.isEmpty)
     }
 
-    func testAppStateLocksReenumeratedRowAndRefreshesAttachedState() async throws {
-        let changed = device(id: "00300000", enumeration: 2)
+    func testAppStateLocksRefreshedRowAndRefreshesAttachedState() async throws {
+        let changed = device()
         let fixture = try AttachFixture(before: device(), after: [changed], pauseUnmount: true)
         defer { fixture.remove() }
         let state = AppState(service: fixture.service, startMonitoring: false)
@@ -169,7 +338,7 @@ final class USBStorageTests: XCTestCase {
         state.toggle(device())
         try await waitUntil { await fixture.storage.isPaused }
         XCTAssertEqual(state.operation(for: changed)?.phase, .unmountingVolumes)
-        // Simulate a hotplug refresh publishing the new ID during the operation.
+        // Simulate a refresh replacing the row model during the operation.
         state.devices = [changed]
         state.toggle(changed)
         XCTAssertEqual(state.operations.count, 1)
@@ -177,11 +346,11 @@ final class USBStorageTests: XCTestCase {
         try await waitUntil { state.operations.isEmpty }
         XCTAssertEqual(state.devices.first?.id, changed.id)
         XCTAssertEqual(state.devices.first?.state, .attached)
-        XCTAssertEqual(try fixture.calls().filter { $0.hasPrefix("usb attach") }, ["usb attach 00300000"])
+        XCTAssertEqual(try fixture.calls().filter { $0.hasPrefix("usb attach") }, ["usb attach 00200000"])
     }
 
-    func testAppStateAttachErrorFollowsNewID() async throws {
-        let changed = device(id: "00300000", enumeration: 2)
+    func testAppStateAttachErrorSurvivesRefresh() async throws {
+        let changed = device()
         let fixture = try AttachFixture(before: device(), after: [changed], failAttach: true)
         defer { fixture.remove() }
         let state = AppState(service: fixture.service, startMonitoring: false)
@@ -192,7 +361,6 @@ final class USBStorageTests: XCTestCase {
         XCTAssertEqual(state.devices.first?.id, changed.id)
         XCTAssertEqual(state.devices.first?.state, .available)
         XCTAssertNotNil(state.rowErrors[changed.connectionKey])
-        XCTAssertNil(state.rowErrors[device().connectionKey])
     }
     #endif
 }
@@ -202,6 +370,14 @@ private actor StorageFixture: USBStoragePreparing {
     let resolutionError: USBStorageError?
     var unmountError: USBStorageError?
     let pauseUnmount: Bool
+    private(set) var events: [String] = []
+    private(set) var pending = false
+    var waitError: USBStorageError?
+    var verifyError: USBStorageError?
+    var finalError: USBStorageError?
+    var pauseMount = false
+    private var mountContinuation: CheckedContinuation<Void, Never>?
+    var waitingForMount: Bool { mountContinuation != nil }
     private var continuation: CheckedContinuation<Void, Never>?
     private(set) var unmountedDisks: [USBStorageDisk] = []
     var isPaused: Bool { continuation != nil }
@@ -213,12 +389,36 @@ private actor StorageFixture: USBStoragePreparing {
         self.pauseUnmount = pauseUnmount
     }
 
+    func begin(for device: USBDevice) async throws { pending = true; events.append("begin") }
+    func end(for device: USBDevice) async { pending = false; events.append("end") }
+    func waitForMount(on disks: [USBStorageDisk]) async throws {
+        events.append("waitMount")
+        if pauseMount { await withCheckedContinuation { mountContinuation = $0 } }
+        try Task.checkCancellation()
+        if let waitError { throw waitError }
+    }
+    func verifyUnmount(on disks: [USBStorageDisk]) async throws {
+        events.append("verify")
+        if let verifyError { throw verifyError }
+    }
+    func finalCheck(for device: USBDevice, on disks: [USBStorageDisk]) async throws {
+        events.append("final")
+        if let finalError { throw finalError }
+    }
+    func configure(wait: USBStorageError? = nil, verify: USBStorageError? = nil,
+                   final: USBStorageError? = nil, pauseMount: Bool = false) {
+        waitError = wait; verifyError = verify; finalError = final; self.pauseMount = pauseMount
+    }
+    func resumeMount() { mountContinuation?.resume(); mountContinuation = nil }
+
+
     func resolveDisks(for device: USBDevice) async throws -> [USBStorageDisk] {
         if let resolutionError { throw resolutionError }
         return [.init(bsdName: "disk8", registryID: 123), .init(bsdName: "disk9", registryID: 124)]
     }
 
     func unmountVolumes(on disks: [USBStorageDisk]) async throws {
+        events.append("unmount")
         unmountedDisks = disks
         if pauseUnmount { await withCheckedContinuation { continuation = $0 } }
         if let unmountError { throw unmountError }

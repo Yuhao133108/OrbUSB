@@ -1,6 +1,9 @@
 import Foundation
 
 enum USBOperationPhase: String, Sendable {
+    case waitingForMount = "Waiting for macOS"
+    case verifyingUnmount = "Verifying volumes"
+    case settling = "Preparing"
     case resolvingDisk = "Resolving disk"
     case unmountingVolumes = "Unmounting volumes"
     case resolvingUSBID = "Re-resolving OrbStack USB ID"
