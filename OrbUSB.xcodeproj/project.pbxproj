@@ -7,9 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		B10000000000000000000001 /* USBStorageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000002 /* USBStorageService.swift */; };
 		A00000000000000000000014 /* OrbUSBApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000012 /* OrbUSBApp.swift */; };
 		A00000000000000000000015 /* MenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000013 /* MenuBarView.swift */; };
+		B10000000000000000000001 /* USBStorageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000002 /* USBStorageService.swift */; };
+		B20000000000000000000001 /* USBHostRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000002 /* USBHostRecovery.swift */; };
+		B20000000000000000000003 /* USBHostTopology.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000004 /* USBHostTopology.swift */; };
+		B20000000000000000000005 /* USBHostRecoveryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000006 /* USBHostRecoveryService.swift */; };
 		E40E27BB3050811300895A3F /* Logger.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40E27BA3050811300895A3F /* Logger.swift */; };
 		E40E27BD3050811700895A3F /* OrbCLI.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40E27BC3050811700895A3F /* OrbCLI.swift */; };
 		E40E27BF3050817A00895A3F /* USBDevice.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40E27BE3050817A00895A3F /* USBDevice.swift */; };
@@ -36,10 +39,13 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		B10000000000000000000002 /* USBStorageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USBStorageService.swift; sourceTree = "<group>"; };
 		A00000000000000000000009 /* OrbUSB.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OrbUSB.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A00000000000000000000012 /* OrbUSBApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbUSBApp.swift; sourceTree = "<group>"; };
 		A00000000000000000000013 /* MenuBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarView.swift; sourceTree = "<group>"; };
+		B10000000000000000000002 /* USBStorageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USBStorageService.swift; sourceTree = "<group>"; };
+		B20000000000000000000002 /* USBHostRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USBHostRecovery.swift; sourceTree = "<group>"; };
+		B20000000000000000000004 /* USBHostTopology.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USBHostTopology.swift; sourceTree = "<group>"; };
+		B20000000000000000000006 /* USBHostRecoveryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USBHostRecoveryService.swift; sourceTree = "<group>"; };
 		E40E27BA3050811300895A3F /* Logger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Logger.swift; sourceTree = "<group>"; };
 		E40E27BC3050811700895A3F /* OrbCLI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbCLI.swift; sourceTree = "<group>"; };
 		E40E27BE3050817A00895A3F /* USBDevice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USBDevice.swift; sourceTree = "<group>"; };
@@ -133,6 +139,8 @@
 		E40E27B73050810700895A3F /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				B20000000000000000000004 /* USBHostTopology.swift */,
+				B20000000000000000000006 /* USBHostRecoveryService.swift */,
 				B10000000000000000000002 /* USBStorageService.swift */,
 				E40E27BC3050811700895A3F /* OrbCLI.swift */,
 				E40E27C0305081D900895A3F /* OrbStackUSBService.swift */,
@@ -153,6 +161,7 @@
 		E40E27B93050810F00895A3F /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				B20000000000000000000002 /* USBHostRecovery.swift */,
 				E40E27BE3050817A00895A3F /* USBDevice.swift */,
 			);
 			path = Models;
@@ -212,14 +221,6 @@
 		};
 /* End PBXNativeTarget section */
 
-/* Begin PBXTargetDependency section */
-		B10000000000000000000004 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = A00000000000000000000005 /* OrbUSB */;
-			targetProxy = B10000000000000000000003 /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
-
 /* Begin PBXProject section */
 		A00000000000000000000001 /* Project object */ = {
 			isa = PBXProject;
@@ -272,6 +273,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B20000000000000000000001 /* USBHostRecovery.swift in Sources */,
+				B20000000000000000000003 /* USBHostTopology.swift in Sources */,
+				B20000000000000000000005 /* USBHostRecoveryService.swift in Sources */,
 				B10000000000000000000001 /* USBStorageService.swift in Sources */,
 				A00000000000000000000014 /* OrbUSBApp.swift in Sources */,
 				E40E27FF30509F4D00895A3F /* USBParser.swift in Sources */,
@@ -299,6 +303,14 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		B10000000000000000000004 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A00000000000000000000005 /* OrbUSB */;
+			targetProxy = B10000000000000000000003 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		A00000000000000000000006 /* Debug */ = {
@@ -332,7 +344,7 @@
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_TESTABILITY = YES;
@@ -340,7 +352,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = OrbUSB;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 0.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.orbusb.OrbUSB;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
@@ -352,7 +364,7 @@
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_TESTABILITY = YES;
@@ -360,7 +372,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = OrbUSB;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 0.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.orbusb.OrbUSB;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};

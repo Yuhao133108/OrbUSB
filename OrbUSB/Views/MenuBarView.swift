@@ -36,6 +36,14 @@ struct MenuBarView: View {
                 .help(state.diagnostic)
                 .padding(8)
             }
+            if let notice = state.recoveryNotice {
+                HStack(alignment: .top) {
+                    Text(notice).font(.caption).foregroundStyle(.red)
+                    Spacer(minLength: 4)
+                    Button("Dismiss") { state.recoveryNotice = nil }.font(.caption)
+                }
+                .padding(8)
+            }
             Divider()
             if visibleDevices.isEmpty {
                 if !state.devices.isEmpty {
@@ -50,7 +58,7 @@ struct MenuBarView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         deviceGroup("Favorites", devices: visibleDevices.filter(state.preferences.isFavorite))
                         ForEach([USBDeviceState.attached, .available, .forwarded, .unknown], id: \.self) { group in
-                            deviceGroup(group.title, devices: visibleDevices.filter {
+                            deviceGroup(group == .available ? "Not attached" : group.title, devices: visibleDevices.filter {
                                 $0.state == group && !state.preferences.isFavorite($0)
                             })
                         }

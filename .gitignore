@@ -10,3 +10,5 @@ Tests/Fixtures/list-format-json.json
 .swiftpm/
 # Project documentation is kept locally only.
 Docs/
+investigation/
+OrbUSBTests/Fixtures/

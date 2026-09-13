@@ -13,6 +13,13 @@ enum USBStorageError: Error, LocalizedError, Sendable, Equatable {
     case identityChanged
     case stateChanged
     case unmountFailed(String)
+    case ejectBusy
+    case ejectPermission
+    case ejectFailed(Int32)
+    case ejectTimedOut
+    case storageReleaseTimedOut
+    case storageReappeared
+    case quietCheckFailed(Int32)
 
     var errorDescription: String? {
         switch self {
@@ -24,6 +31,13 @@ enum USBStorageError: Error, LocalizedError, Sendable, Equatable {
         case .identityChanged: "The USB device changed or disconnected. Refresh and try again."
         case .stateChanged: "Device is no longer available. Review its current state and try again."
         case .unmountFailed: "Unable to unmount volumes. Close files using the disk and try again."
+        case .ejectBusy: "Disk is busy. Close files using the disk and try again. The device was not attached."
+        case .ejectPermission: "macOS denied permission to eject the disk. The device was not attached."
+        case .ejectFailed(let status): "Disk eject failed (\(status)). The device was not attached."
+        case .ejectTimedOut: "Disk eject timed out. The device was not attached; retry is blocked until macOS completes the request."
+        case .storageReleaseTimedOut: "USB storage stack did not quiesce before timeout. The device was not attached to avoid a macOS kernel panic."
+        case .storageReappeared: "USB storage remounted or changed during handoff. The device was not attached."
+        case .quietCheckFailed(let status): "Unable to verify IOKit quiet state (\(status)). The device was not attached."
         }
     }
 }
@@ -42,24 +56,39 @@ struct USBStorageHost: Sendable {
 }
 
 protocol USBStoragePreparing: Sendable {
-    func begin(for device: USBDevice) async throws
+    // Pins physical identity for ALL devices; returns whether storage preparation is required.
+    func begin(for device: USBDevice) async throws -> Bool
     func end(for device: USBDevice) async
     func resolveDisks(for device: USBDevice) async throws -> [USBStorageDisk]
     func waitForMount(on disks: [USBStorageDisk]) async throws
     func unmountVolumes(on disks: [USBStorageDisk]) async throws
     func verifyUnmount(on disks: [USBStorageDisk]) async throws
     func finalCheck(for device: USBDevice, on disks: [USBStorageDisk]) async throws
+    func ejectDisks(for device: USBDevice, on disks: [USBStorageDisk]) async throws
+    func waitForStorageRelease(for device: USBDevice) async throws
+    func launchValidation(for device: USBDevice) -> @Sendable () throws -> Void
+    func ensureNoPendingOperations(for id: String?) async throws
 }
 
 struct USBStorageService: USBStoragePreparing {
     private let arbitration = StorageArbitration.shared
 
-    func begin(for device: USBDevice) async throws {
+    func begin(for device: USBDevice) async throws -> Bool {
         try await arbitration.access { try $0.begin(device) }
     }
 
     func end(for device: USBDevice) async {
-        _ = try? await arbitration.access { $0.pending[device.id] = nil; $0.verified.removeAll(); $0.verifiedTopology.removeAll() }
+        _ = try? await arbitration.access { $0.end(device) }
+    }
+
+    func ensureNoPendingOperations(for id: String?) async throws {
+        try await arbitration.access { bridge in
+            guard id.map({ id in !bridge.pending.keys.contains {
+                $0 == id || (UInt32($0, radix: 16) != nil && UInt32($0, radix: 16) == UInt32(id, radix: 16))
+            } }) ?? bridge.pending.isEmpty else {
+                throw USBStorageError.operationInProgress
+            }
+        }
     }
 
     func resolveDisks(for device: USBDevice) async throws -> [USBStorageDisk] {
@@ -104,19 +133,78 @@ struct USBStorageService: USBStoragePreparing {
         try await wait(disks, unmounted: true)
         try await arbitration.access { bridge in
             guard try bridge.ready(disks, unmounted: true) else { throw USBStorageError.diskStillMounted }
-            for disk in disks {
-                bridge.verified[disk.registryID] = bridge.generation
-                bridge.verifiedTopology[disk.registryID] = bridge.lastTopology
-            }
         }
     }
 
     func finalCheck(for device: USBDevice, on disks: [USBStorageDisk]) async throws {
-        try await arbitration.access { bridge in
-            try bridge.validateHost(device)
-            guard disks.allSatisfy({ bridge.verified[$0.registryID] == bridge.generation }),
-                  try bridge.ready(disks, unmounted: true),
-                  disks.allSatisfy({ bridge.verifiedTopology[$0.registryID] == bridge.lastTopology }) else { throw USBStorageError.storageNotReady }
+        try await arbitration.access { try $0.checkForLaunch(device) }
+    }
+
+    func launchValidation(for device: USBDevice) -> @Sendable () throws -> Void {
+        // Runs on the process queue immediately before Process.run(), after all
+        // actor hops. No DA object escapes its own serial queue.
+        { try arbitration.validateForLaunch(device) }
+    }
+
+    func ejectDisks(for device: USBDevice, on disks: [USBStorageDisk]) async throws {
+        try Task.checkCancellation()
+        try await arbitration.access { try $0.recordEjectPlan(device, disks: disks) }
+        for disk in disks {
+            try Task.checkCancellation()
+            try await arbitration.eject(disk, device: device)
+        }
+        try Task.checkCancellation()
+        try await arbitration.access { $0.preparedDevices.insert(device.id) }
+    }
+
+    func waitForStorageRelease(for device: USBDevice) async throws {
+        let start = ContinuousClock.now
+        let deadline = start + .seconds(5)
+        var gate = USBStorageReleaseGate(deadline: deadline)
+        var lastReason = ""
+        Log.usb.info("[USBTransfer] waiting for storage quiescence id=\(device.id, privacy: .public)")
+        while true {
+            try Task.checkCancellation()
+            guard ContinuousClock.now < deadline else { throw USBStorageError.storageReleaseTimedOut }
+            let (snapshot, revision) = try await arbitration.access { bridge in
+                (try bridge.validatedQuiescenceSnapshot(device), bridge.revisions[device.id, default: 0])
+            }
+            let now = ContinuousClock.now
+            guard now < deadline else { throw USBStorageError.storageReleaseTimedOut }
+            let reason = snapshot.quiescenceDiagnostic
+            if reason != lastReason {
+                Self.logQuiescence(snapshot)
+                lastReason = reason
+            }
+            if gate.quietSince == nil && snapshot.storageQuiescent {
+                Log.usb.info("[USBTransfer] first quiet state observed after \(String(describing: start.duration(to: now)), privacy: .public); checking 250ms stability")
+            }
+            if try gate.observe(released: snapshot.storageQuiescent, revision: revision, now: now,
+                                    topology: Set(snapshot.ioServiceNodes.values.map(\.identity))) {
+                try await arbitration.access { bridge in
+                    let final = try bridge.validatedQuiescenceSnapshot(device)
+                    guard ContinuousClock.now < deadline else { throw USBStorageError.storageReleaseTimedOut }
+                    guard bridge.revisions[device.id, default: 0] == revision, final.storageQuiescent,
+                          final.ioServiceNodes.mapValues(\.identity) == snapshot.ioServiceNodes.mapValues(\.identity) else {
+                        throw USBStorageError.storageReappeared
+                    }
+                    bridge.releasedRevisions[device.id] = revision
+                    bridge.verifiedNodes[device.id] = Set(final.ioServiceNodes.values.map(\.identity))
+                }
+                Log.usb.info("[USBTransfer] quiescence and stable window verified after \(String(describing: start.duration(to: .now)), privacy: .public)")
+                return
+            }
+            try await Task.sleep(for: min(.milliseconds(75), now.duration(to: deadline)))
+        }
+    }
+
+    fileprivate static func logQuiescence(_ host: USBHostSnapshot) {
+        Log.usb.info("[USBStorage] mounted=\(host.mountedVolumes.count) DA-mounted=\(host.daMountedMedia.count) mountAudit=\(host.storageAuditComplete) DAAudit=\(host.diskArbitrationAuditComplete) quiet=\(host.storageQuiescent)")
+        // One record per node: a single concatenated tree can exceed OSLog's
+        // message limit and silently omit the exact node that blocks handoff.
+        for node in host.ioServiceNodes.values.sorted(by: { $0.identity.registryID < $1.identity.registryID }) {
+            let detail = host.diagnostic(for: node)
+            Log.usb.info("[USBStorage] \(detail, privacy: .public)")
         }
     }
 
@@ -146,7 +234,6 @@ struct USBStorageService: USBStoragePreparing {
         guard !candidates.isEmpty else { throw USBStorageError.diskNotFound }
         guard candidates.count == 1 else { throw USBStorageError.ambiguousDevice }
         let disks = candidates[0].disks
-        guard !disks.isEmpty else { throw USBStorageError.diskNotFound }
         return disks.sorted { $0.bsdName < $1.bsdName }
     }
 
@@ -234,12 +321,22 @@ private final class StorageArbitration: @unchecked Sendable {
     static let shared = StorageArbitration()
     private let queue = DispatchQueue(label: "dev.orbusb.disk-arbitration")
     private var session: DASession?
+    private var notificationPort: IONotificationPortRef?
+    private var notificationIterators: [io_iterator_t] = []
+    private var serviceAncestors: [UInt64: Set<UInt64>] = [:]
+    private var busyObservers: [String: io_object_t] = [:]
     fileprivate var pending: [String: UInt64] = [:]
     private var lifecycle = USBMountLifecycle()
-    fileprivate var generation: UInt64 = 0
-    fileprivate var verified: [UInt64: UInt64] = [:]
-    fileprivate var verifiedTopology: [UInt64: Set<UInt64>] = [:]
-    fileprivate var lastTopology: Set<UInt64> = []
+    fileprivate var revisions: [String: UInt64] = [:]
+    fileprivate var releasedRevisions: [String: UInt64] = [:]
+    private var anchors: [String: USBHostIdentity] = [:]
+    private var ejectPlans: [String: USBStorageHandoffEvidence] = [:]
+    fileprivate var preparedDevices: Set<String> = []
+    fileprivate var verifiedNodes: [String: Set<USBStorageNodeIdentity>] = [:]
+    private var invalidatedPreparations: Set<String> = []
+    private var storageRequired: Set<String> = []
+    private var requestMedia: [String: Set<UInt64>] = [:]
+    private var ended: Set<String> = []
     fileprivate var lastMedia: [USBStorageDisk] = []
     private var claimRequests = USBUnmountRequests()
     private var claimDisks: [Int: USBStorageDisk] = [:]
@@ -296,6 +393,64 @@ private final class StorageArbitration: @unchecked Sendable {
                 return nil
             }, context)
             DASessionSetDispatchQueue(session, queue)
+            // Observe transient storage publication/termination between polls.
+            // If observation cannot be armed, no transfer can start.
+            if !startRegistryObservation() { self.session = nil }
+        }
+    }
+
+    private func startRegistryObservation() -> Bool {
+        guard let port = IONotificationPortCreate(kIOMainPortDefault) else { return false }
+        notificationPort = port
+        IONotificationPortSetDispatchQueue(port, queue)
+        let context = Unmanaged.passUnretained(self).toOpaque()
+        for notification in [kIOFirstMatchNotification, kIOTerminatedNotification] {
+            var iterator: io_iterator_t = 0
+            let status = IOServiceAddMatchingNotification(port, notification, IOServiceMatching("IOService"),
+                { context, iterator in
+                    guard let context else { return }
+                    StorageArbitration.bridge(context).registryChanged(iterator)
+                }, context, &iterator)
+            guard status == KERN_SUCCESS else {
+                if iterator != 0 { IOObjectRelease(iterator) }
+                notificationIterators.forEach { IOObjectRelease($0) }
+                notificationIterators.removeAll()
+                IONotificationPortDestroy(port); notificationPort = nil
+                return false
+            }
+            notificationIterators.append(iterator)
+            registryChanged(iterator) // drain and arm before any transaction
+        }
+        return true
+    }
+
+    private func registryChanged(_ iterator: io_iterator_t) {
+        while true {
+            let entry = IOIteratorNext(iterator)
+            guard entry != 0 else { break }
+            defer { IOObjectRelease(entry) }
+            do {
+                guard try USBHostTopology.isStorageService(entry) else { continue }
+                let id = try USBHostTopology.registryID(entry)
+                var ids: Set<UInt64> = []
+                let complete = ancestors(entry, visited: &ids)
+                // A terminated service can already have lost its parent edge.
+                ids.formUnion(serviceAncestors[id, default: []])
+                if notificationIterators.last == iterator && notificationIterators.count == 2 {
+                    serviceAncestors[id] = nil
+                } else {
+                    serviceAncestors[id] = ids
+                }
+                for (key, host) in pending where ids.contains(host) || !complete {
+                    revisions[key, default: 0] &+= 1
+                    if let plan = ejectPlans[key], !plan.nodeIDs.contains(id) { invalidatedPreparations.insert(key) }
+                }
+            } catch {
+                for key in pending.keys { revisions[key, default: 0] &+= 1 }
+            }
+        }
+        if IOIteratorIsValid(iterator) == 0 {
+            for key in pending.keys { revisions[key, default: 0] &+= 1 }
         }
     }
 
@@ -363,14 +518,15 @@ private final class StorageArbitration: @unchecked Sendable {
             knownAncestors[name] = ids
         }
         if !ids.isDisjoint(with: Set(pending.values)) {
-            generation &+= 1
-            verified.removeAll()
-            verifiedTopology.removeAll()
+            for (key, host) in pending where ids.contains(host) {
+                revisions[key, default: 0] &+= 1
+                if ejectPlans[key] != nil, isMounted(disk) { invalidatedPreparations.insert(key) }
+            }
             Log.usb.debug("[USB Attach] \(kind, privacy: .public) \(self.name(disk) ?? "unknown", privacy: .public)")
         }
     }
 
-    fileprivate func begin(_ device: USBDevice) throws {
+    fileprivate func begin(_ device: USBDevice) throws -> Bool {
         guard let session else { throw USBStorageError.storageNotReady }
         guard pending[device.id] == nil else { throw USBStorageError.operationInProgress }
         guard let location = UInt32(device.id, radix: 16),
@@ -395,30 +551,181 @@ private final class StorageArbitration: @unchecked Sendable {
             guard IORegistryEntryGetRegistryEntryID(host, &id) == KERN_SUCCESS else { continue }
             matches.append(id)
         }
-        guard matches.count == 1 else { throw USBStorageError.identityChanged }
+        guard IOIteratorIsValid(iterator) != 0, matches.count == 1 else { throw USBStorageError.identityChanged }
+        let entry = IOServiceGetMatchingService(kIOMainPortDefault, IORegistryEntryIDMatching(matches[0]))
+        guard entry != 0 else { throw USBStorageError.identityChanged }
+        defer { IOObjectRelease(entry) }
+        let snapshot = try USBHostTopology.snapshot(entry)
+        guard !pending.values.contains(snapshot.identity.registryEntryID) else { throw USBStorageError.operationInProgress }
+        if let displayed = device.hostIdentity,
+           !displayed.sameConnection(as: snapshot.identity, requireGeneration: true) { throw USBStorageError.identityChanged }
+        let needsStorage = snapshot.requiresStorageHandoff(device)
         // A Mac may itself boot from USB. Never prepare the startup filesystem.
-        guard let startup = DADiskCreateFromVolumePath(kCFAllocatorDefault, session, URL(fileURLWithPath: "/") as CFURL) else {
-            throw USBStorageError.storageNotReady
+        if needsStorage {
+            guard let startup = DADiskCreateFromVolumePath(kCFAllocatorDefault, session, URL(fileURLWithPath: "/") as CFURL) else {
+                throw USBStorageError.storageNotReady
+            }
+            let startupMedia = DADiskCopyIOMedia(DADiskCopyWholeDisk(startup) ?? startup)
+            guard startupMedia != 0 else { throw USBStorageError.storageNotReady }
+            var startupAncestors: Set<UInt64> = []
+            let complete = ancestors(startupMedia, visited: &startupAncestors)
+            IOObjectRelease(startupMedia)
+            guard complete else { throw USBStorageError.storageNotReady }
+            guard !startupAncestors.contains(matches[0]) else { throw USBStorageError.stateChanged }
         }
-        let startupMedia = DADiskCopyIOMedia(DADiskCopyWholeDisk(startup) ?? startup)
-        guard startupMedia != 0 else { throw USBStorageError.storageNotReady }
-        var startupAncestors: Set<UInt64> = []
-        let complete = ancestors(startupMedia, visited: &startupAncestors)
-        IOObjectRelease(startupMedia)
-        guard complete else { throw USBStorageError.storageNotReady }
-        guard !startupAncestors.contains(matches[0]) else { throw USBStorageError.stateChanged }
+        if needsStorage {
+            guard let notificationPort else { throw USBStorageError.storageNotReady }
+            var observer: io_object_t = 0
+            let result = IOServiceAddInterestNotification(notificationPort, entry, kIOBusyInterest,
+                { context, service, _, _ in
+                    guard let context else { return }
+                    let bridge = StorageArbitration.bridge(context)
+                    // Root busy transitions include client busy work. Remember
+                    // even a busy->quiet pulse entirely between polling samples.
+                    let id = try? USBHostTopology.registryID(service)
+                    for (key, host) in bridge.pending where id == nil || host == id {
+                        bridge.revisions[key, default: 0] &+= 1
+                    }
+                }, Unmanaged.passUnretained(self).toOpaque(), &observer)
+            guard result == KERN_SUCCESS else {
+                if observer != 0 { IOObjectRelease(observer) }
+                throw USBStorageError.quietCheckFailed(result)
+            }
+            busyObservers[device.id] = observer
+        }
         pending[device.id] = matches[0]
+        anchors[device.id] = snapshot.identity
+        revisions[device.id] = 0
+        if needsStorage { storageRequired.insert(device.id) }
+        Log.usb.info("[USBTransfer] physical USB id=\(device.id, privacy: .public) registry=\(matches[0]) storage=\(needsStorage)")
         Log.usb.debug("[USB Attach] pending mount prevention enabled device=\(device.id, privacy: .public)")
+        return needsStorage
+    }
+
+    fileprivate func end(_ device: USBDevice) {
+        ended.insert(device.id)
+        clearFinishedTransactions()
+    }
+
+    private func clearFinishedTransactions() {
+        for key in Array(ended) {
+            let media = requestMedia[key, default: []]
+            guard !requests.containsAny(media), !claimRequests.containsAny(media) else { continue }
+            pending[key] = nil; anchors[key] = nil; requestMedia[key] = nil
+            revisions[key] = nil; releasedRevisions[key] = nil
+            ejectPlans[key] = nil; verifiedNodes[key] = nil
+            if let observer = busyObservers.removeValue(forKey: key) { IOObjectRelease(observer) }
+            preparedDevices.remove(key); invalidatedPreparations.remove(key)
+            storageRequired.remove(key); ended.remove(key)
+        }
+    }
+
+    private func track(_ disk: USBStorageDisk) throws {
+        let media = IOServiceGetMatchingService(kIOMainPortDefault, IORegistryEntryIDMatching(disk.registryID))
+        guard media != 0 else { throw USBStorageError.identityChanged }
+        defer { IOObjectRelease(media) }
+        var ids: Set<UInt64> = []
+        guard ancestors(media, visited: &ids) else { throw USBStorageError.storageNotReady }
+        for (key, host) in pending where ids.contains(host) { requestMedia[key, default: []].insert(disk.registryID) }
     }
 
     fileprivate func validateHost(_ device: USBDevice) throws {
-        guard let id = pending[device.id] else { throw USBStorageError.identityChanged }
-        let host = IOServiceGetMatchingService(kIOMainPortDefault, IORegistryEntryIDMatching(id))
+        _ = try liveHost(device)
+    }
+
+    private func liveHost(_ device: USBDevice, checkQuiet: Bool = false) throws -> USBHostSnapshot {
+        guard let anchor = anchors[device.id] else { throw USBStorageError.identityChanged }
+        let host = IOServiceGetMatchingService(kIOMainPortDefault, IORegistryEntryIDMatching(anchor.registryEntryID))
         guard host != 0 else { throw USBStorageError.identityChanged }
         defer { IOObjectRelease(host) }
-        guard (USBStorageService.property(host, "locationID") as? NSNumber)?.uint32Value == UInt32(device.id, radix: 16) else {
-            throw USBStorageError.identityChanged
+        let snapshot = try USBHostTopology.snapshot(host, checkQuiet: checkQuiet)
+        guard anchor.sameConnection(as: snapshot.identity, requireGeneration: true) else { throw USBStorageError.identityChanged }
+        return snapshot
+    }
+
+    fileprivate func releaseSnapshot(_ device: USBDevice) throws -> USBHostSnapshot {
+        guard let anchor = anchors[device.id] else { throw USBStorageError.identityChanged }
+        let snapshots = try USBHostTopology.snapshots(quietHost: anchor.registryEntryID)
+        guard var host = snapshots.first(where: { $0.identity == anchor }) else { throw USBStorageError.identityChanged }
+        // The global mount audit takes time. Re-read the target subtree AFTER it
+        // so a driver/media created during that audit cannot use the old snapshot.
+        let final = try liveHost(device, checkQuiet: true)
+        host.ioServiceNodes.merge(final.ioServiceNodes) { old, new in
+            var result = new
+            result.busyState = max(old.busyState, new.busyState)
+            if old.waitQuietStatus != 0 { result.waitQuietStatus = old.waitQuietStatus }
+            return result
         }
+        host.mediaIDs.formUnion(final.mediaIDs)
+        host.wholeDisks += final.wholeDisks
+        host.storageServices.merge(final.storageServices) { _, new in new }
+        host.hasSCSI = host.hasSCSI || final.hasSCSI
+        host.busy = host.busy || final.busy
+        host.exclusiveOwners += final.exclusiveOwners
+        host.userClients += final.userClients
+        try auditDiskArbitration(&host)
+        return host
+    }
+
+    private func auditDiskArbitration(_ host: inout USBHostSnapshot) throws {
+        guard let session else { throw USBStorageError.storageNotReady }
+        for id in host.mediaIDs {
+            guard let name = host.ioServiceNodes[id]?.identity.bsdName,
+                  let disk = DADiskCreateFromBSDName(kCFAllocatorDefault, session, "/dev/" + name),
+                  mediaID(disk) == id,
+                  let description = DADiskCopyDescription(disk) as? [String: Any],
+                  description[kDADiskDescriptionMediaBSDNameKey as String] as? String == name else {
+                throw USBStorageError.storageNotReady
+            }
+            if description[kDADiskDescriptionVolumePathKey as String] != nil { host.daMountedMedia.insert(id) }
+        }
+        host.diskArbitrationAuditComplete = true
+    }
+
+    fileprivate func recordEjectPlan(_ device: USBDevice, disks: [USBStorageDisk]) throws {
+        let host = try releaseSnapshot(device)
+        let physical = try USBStorageService.disks(for: device, hosts: USBStorageService.hosts())
+        guard physical == disks.sorted(by: { $0.bsdName < $1.bsdName }),
+              !physical.isEmpty || host.mediaIDs.isEmpty else { throw USBStorageError.diskNotFound }
+        guard host.storageAuditComplete, host.diskArbitrationAuditComplete,
+              host.mountedVolumes.isEmpty, host.daMountedMedia.isEmpty else { throw USBStorageError.diskStillMounted }
+        ejectPlans[device.id] = USBStorageHandoffEvidence(host)
+        preparedDevices.remove(device.id)
+    }
+
+    fileprivate func validatedQuiescenceSnapshot(_ device: USBDevice) throws -> USBHostSnapshot {
+        guard preparedDevices.contains(device.id), let evidence = ejectPlans[device.id] else {
+            throw USBStorageError.storageNotReady
+        }
+        guard !invalidatedPreparations.contains(device.id) else { throw USBStorageError.storageReappeared }
+        let media = requestMedia[device.id, default: []]
+        guard !requests.containsAny(media), !claimRequests.containsAny(media) else { throw USBStorageError.operationInProgress }
+        let host = try releaseSnapshot(device)
+        try evidence.validate(host)
+        return host
+    }
+
+    fileprivate func checkForLaunch(_ device: USBDevice, logBoundary: Bool = false) throws {
+        if storageRequired.contains(device.id) {
+            let host = try validatedQuiescenceSnapshot(device)
+            guard releasedRevisions[device.id] == revisions[device.id], releasedRevisions[device.id] != nil,
+                  host.storageQuiescent,
+                  verifiedNodes[device.id] == Set(host.ioServiceNodes.values.map(\.identity)) else {
+                throw USBStorageError.storageReappeared
+            }
+            if logBoundary {
+                Log.usb.info("[USBTransfer] host filesystem quiescent id=\(device.id, privacy: .public)")
+                Log.usb.info("[USBTransfer] persistent storage services: \(host.storageServices.values.sorted().joined(separator: ", "), privacy: .public)")
+                Log.usb.info("[USBTransfer] busy states follow; every relevant node must be quiet")
+                USBStorageService.logQuiescence(host)
+            }
+        } else {
+            guard try !liveHost(device).requiresStorageHandoff(device) else { throw USBStorageError.storageReappeared }
+        }
+    }
+
+    func validateForLaunch(_ device: USBDevice) throws {
+        try queue.sync { try checkForLaunch(device, logBoundary: true) }
     }
 
     fileprivate func ready(_ disks: [USBStorageDisk], unmounted: Bool, requireLifecycle: Bool = true) throws -> Bool {
@@ -460,7 +767,6 @@ private final class StorageArbitration: @unchecked Sendable {
         }
         defer { IOObjectRelease(iterator) }
         var names: Set<String> = []
-        var topology: Set<UInt64> = []
         var currentMedia: [USBStorageDisk] = []
         while true {
             let media = IOIteratorNext(iterator)
@@ -480,16 +786,13 @@ private final class StorageArbitration: @unchecked Sendable {
                 return waiting("\(name): " + lifecycle.reason(name, registryID: id))
             }
             names.insert(name)
-            topology.insert(id)
             currentMedia.append(USBStorageDisk(bsdName: name, registryID: id))
             if unmounted && description[kDADiskDescriptionVolumePathKey as String] != nil { return waiting("mounted " + name) }
         }
         guard IOIteratorIsValid(iterator) != 0, Set(disks.map(\.bsdName)).isSubset(of: names) else { return false }
         if unmounted {
-            var mounts: UnsafeMutablePointer<statfs>?
-            let count = getmntinfo(&mounts, MNT_NOWAIT)
-            guard count > 0, let mounts else { throw USBStorageError.storageNotReady }
-            for index in 0..<Int(count) {
+            let mounts = try USBHostTopology.mountedFilesystems()
+            for index in mounts.indices {
                 let source = withUnsafePointer(to: mounts[index].f_mntfromname) {
                     $0.withMemoryRebound(to: CChar.self, capacity: Int(MNAMELEN)) { String(cString: $0) }
                 }
@@ -508,7 +811,6 @@ private final class StorageArbitration: @unchecked Sendable {
                 if !ids.isDisjoint(with: targetHosts) { return false }
             }
         }
-        lastTopology = topology
         lastMedia = currentMedia.sorted { $0.bsdName < $1.bsdName }
         lastWaitReason = ""
         return true
@@ -524,6 +826,8 @@ private final class StorageArbitration: @unchecked Sendable {
                     continuation.resume(throwing: USBStorageError.storageNotReady)
                     return
                 }
+                do { try track(target) }
+                catch { continuation.resume(throwing: error); return }
                 let token = claimRequests.insert(target, continuation: continuation)
                 claimDisks[token] = target
                 // DA dispatches claim only after initial appearance and after the
@@ -534,6 +838,7 @@ private final class StorageArbitration: @unchecked Sendable {
                 DADiskClaim(disk, DADiskClaimOptions(kDADiskClaimOptionDefault), nil, nil, { disk, dissenter, context in
                     guard let context else { return }
                     let bridge = StorageArbitration.shared
+                    defer { bridge.clearFinishedTransactions() }
                     let token = Int(bitPattern: context)
                     guard let target = bridge.claimDisks.removeValue(forKey: token) else { return }
                     if let dissenter {
@@ -589,6 +894,67 @@ private final class StorageArbitration: @unchecked Sendable {
         return USBStorageWholeMedia.unmountTargets(physical: physical, media: wholeMedia)
     }
 
+    func eject(_ target: USBStorageDisk, device: USBDevice) async throws {
+        do {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+                queue.async { [self] in
+                    do {
+                        try validateHost(device)
+                        // Resolve afresh by registry generation; never send an old
+                        // DA object or a potentially reused BSD name to eject.
+                        try USBStorageService.validate(target)
+                        guard let session, !requests.contains(target),
+                              let disk = DADiskCreateFromBSDName(kCFAllocatorDefault, session, "/dev/" + target.bsdName),
+                              mediaID(disk) == target.registryID,
+                              let whole = DADiskCopyWholeDisk(disk), mediaID(whole) == target.registryID else {
+                            throw USBStorageError.identityChanged
+                        }
+                        try track(target)
+                        let token = requests.insert(target, continuation: continuation)
+                        Log.usb.info("[USBTransfer] eject whole disk \(target.bsdName, privacy: .public)")
+                        DADiskEject(whole, DADiskEjectOptions(kDADiskEjectOptionDefault), { _, dissenter, context in
+                            guard let context else { return }
+                            let bridge = StorageArbitration.shared
+                            defer { bridge.clearFinishedTransactions() }
+                            let token = Int(bitPattern: context)
+                            if let dissenter {
+                                let status = DADissenterGetStatus(dissenter)
+                                let error: USBStorageError
+                                switch status {
+                                case DAReturn(kDAReturnBusy): error = .ejectBusy
+                                case DAReturn(kDAReturnNotPermitted), DAReturn(kDAReturnNotPrivileged): error = .ejectPermission
+                                default: error = .ejectFailed(Int32(truncatingIfNeeded: status))
+                                }
+                                Log.usb.error("[USBTransfer] eject callback failed status=\(status)")
+                                bridge.requests.complete(token, result: .failure(error))
+                            } else {
+                                Log.usb.info("[USBTransfer] eject callback completed; storage release is NOT yet verified")
+                                bridge.requests.complete(token, result: .success(()))
+                            }
+                        }, UnsafeMutableRawPointer(bitPattern: token))
+                        queue.asyncAfter(deadline: .now() + 8) { [self] in
+                            requests.timeout(token, error: .ejectTimedOut)
+                        }
+                    } catch { continuation.resume(throwing: error) }
+                }
+            }
+        } catch let error as USBStorageError {
+            // A vanished medium can race eject. Timeout and permission failures
+            // never qualify. The physical USB anchor must still be the same.
+            switch error {
+            case .identityChanged, .ejectBusy, .ejectFailed:
+                let absent = try await access { bridge in
+                    let host = try bridge.releaseSnapshot(device)
+                    return host.storageAuditComplete && host.mediaIDs.isEmpty && host.mountedVolumes.isEmpty
+                }
+                guard absent else { throw error }
+                Log.usb.info("[USBTransfer] media vanished during eject; full release verification still required")
+            default: throw error
+            }
+        }
+        try Task.checkCancellation()
+    }
+
     func unmount(_ disk: USBStorageDisk) async throws {
         try await withCheckedThrowingContinuation { continuation in
             queue.async { [self] in
@@ -600,6 +966,7 @@ private final class StorageArbitration: @unchecked Sendable {
                           let whole = DADiskCopyWholeDisk(volume), name(whole) == disk.bsdName else {
                         throw USBStorageError.storageNotReady
                     }
+                    try track(disk)
                     let token = requests.insert(disk, continuation: continuation)
                     Log.usb.debug("[USB Attach] unmount whole disk requested \(disk.bsdName, privacy: .public)")
                     // Context is an opaque request number, not a retained Swift object.
@@ -608,6 +975,7 @@ private final class StorageArbitration: @unchecked Sendable {
                     DADiskUnmount(whole, DADiskUnmountOptions(kDADiskUnmountOptionWhole), { _, dissenter, context in
                         guard let context else { return }
                         let bridge = StorageArbitration.shared
+                        defer { bridge.clearFinishedTransactions() }
                         let token = Int(bitPattern: context)
                         if let dissenter {
                             let status = DADissenterGetStatus(dissenter)
@@ -643,6 +1011,10 @@ struct USBUnmountRequests {
         entries.values.contains { $0.disk.registryID == disk.registryID }
     }
 
+    func containsAny(_ ids: Set<UInt64>) -> Bool {
+        entries.values.contains { ids.contains($0.disk.registryID) }
+    }
+
     mutating func insert(_ disk: USBStorageDisk, continuation: CheckedContinuation<Void, any Error>) -> Int {
         let token = nextToken
         nextToken += 1
@@ -654,10 +1026,10 @@ struct USBUnmountRequests {
         entries.removeValue(forKey: token)?.continuation?.resume(with: result)
     }
 
-    mutating func timeout(_ token: Int) {
+    mutating func timeout(_ token: Int, error: USBStorageError = .storageNotReady) {
         let continuation = entries[token]?.continuation
         entries[token]?.continuation = nil
-        continuation?.resume(throwing: USBStorageError.storageNotReady)
+        continuation?.resume(throwing: error)
         // Keep only a small tombstone. No continuation, Task or CF object is
         // retained; another request for this IOMedia cannot pass until completion.
     }
@@ -707,5 +1079,66 @@ struct USBStorageWholeMedia {
             !physicalIDs.contains($0.disk.registryID) && !$0.ancestors.isDisjoint(with: physicalIDs)
         }.map(\.disk)
         return containers.sorted { $0.bsdName < $1.bsdName } + physical
+    }
+}
+
+// Pure policy: multiple fresh observations across the settle window, never a
+// delay that converts busy work into readiness. Persistent quiet nodes may stay.
+struct USBStorageReleaseGate {
+    private(set) var quietSince: ContinuousClock.Instant?
+    private var revision: UInt64?
+    private var topology: Set<USBStorageNodeIdentity>?
+    var settle: Duration = .milliseconds(250)
+    var deadline: ContinuousClock.Instant?
+
+    mutating func observe(released: Bool, revision: UInt64, now: ContinuousClock.Instant,
+                          topology: Set<USBStorageNodeIdentity> = []) throws -> Bool {
+        if let deadline, now >= deadline { throw USBStorageError.storageReleaseTimedOut }
+        if let quietSince {
+            guard released, self.revision == revision, self.topology == topology else { throw USBStorageError.storageReappeared }
+            return quietSince.duration(to: now) >= settle
+        }
+        if released { quietSince = now; self.revision = revision; self.topology = topology }
+        return false
+    }
+}
+
+// This is preparation evidence, not a cache of live DA/IOKit objects. Removal
+// during eject is allowed; newly created media, nodes or changed ancestry are not.
+struct USBStorageHandoffEvidence {
+    let identity: USBHostIdentity
+    let mediaIDs: Set<UInt64>
+    let nodes: Set<USBStorageNodeIdentity>
+    let configuration: Int?
+    let interfaceClasses: Set<Int>
+    var nodeIDs: Set<UInt64> { Set(nodes.map(\.registryID)) }
+
+    init(_ host: USBHostSnapshot) {
+        identity = host.identity; mediaIDs = host.mediaIDs
+        nodes = Set(host.ioServiceNodes.values.map(\.identity))
+        configuration = host.configuration; interfaceClasses = host.interfaceClasses
+    }
+
+    func validate(_ host: USBHostSnapshot) throws {
+        guard host.identity == identity else { throw USBStorageError.identityChanged }
+        guard host.mediaIDs.isSubset(of: mediaIDs),
+              Set(host.ioServiceNodes.values.map(\.identity)).isSubset(of: nodes),
+              configuration == host.configuration, interfaceClasses == host.interfaceClasses else {
+            throw USBStorageError.storageReappeared
+        }
+    }
+}
+
+extension USBHostSnapshot {
+    func diagnostic(for node: USBStorageNode) -> String {
+        let mounted = daMountedMedia.contains(node.identity.registryID)
+        return node.diagnostic(blockedByFilesystem: mounted)
+            + (mediaIDs.contains(node.identity.registryID) ? " DA-mounted=\(mounted)" : "")
+    }
+
+    var quiescenceDiagnostic: String {
+        let nodes = ioServiceNodes.values.sorted { $0.identity.registryID < $1.identity.registryID }
+            .map { diagnostic(for: $0) }.joined(separator: "; ")
+        return "mounts=\(mountedVolumes.count) DA-mounted=\(daMountedMedia.count) mountAudit=\(storageAuditComplete) DAAudit=\(diskArbitrationAuditComplete) quiet=\(storageQuiescent); " + nodes
     }
 }

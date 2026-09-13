@@ -72,11 +72,13 @@ struct OrbCLI: Sendable {
         throw OrbStackError.executableNotFound
     }
 
-    func run(executable: URL, arguments: [String], timeout: TimeInterval = 12) async throws -> CLIResult {
+    func run(executable: URL, arguments: [String], timeout: TimeInterval = 12,
+             beforeLaunch: @escaping @Sendable () throws -> Void = {}) async throws -> CLIResult {
         let execution = CommandExecution()
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
-                execution.start(executable: executable, arguments: arguments, timeout: timeout, continuation: continuation)
+                execution.start(executable: executable, arguments: arguments, timeout: timeout,
+                                beforeLaunch: beforeLaunch, continuation: continuation)
             }
         } onCancel: {
             execution.cancel()
@@ -96,6 +98,10 @@ private final class CommandExecution: @unchecked Sendable {
     private var errorEnded = false
     private var readers: [DispatchSourceRead] = []
     private var status: Int32?
+    private let cancellationLock = NSLock()
+    private var cancellationRequested = false
+    private var failure: (any Error)?
+    private var drainDeadlineScheduled = false
     private var cancelled = false
     private var finished = false
     private var started = Date()
@@ -103,6 +109,7 @@ private final class CommandExecution: @unchecked Sendable {
     private let limit = 4 * 1024 * 1024
 
     func start(executable: URL, arguments: [String], timeout: TimeInterval,
+               beforeLaunch: @escaping @Sendable () throws -> Void,
                continuation: CheckedContinuation<CLIResult, any Error>) {
         queue.async { [self] in
             self.continuation = continuation
@@ -130,6 +137,8 @@ private final class CommandExecution: @unchecked Sendable {
                 }
             }
             do {
+                try beforeLaunch()
+                guard !cancellationLock.withLock({ cancellationRequested }) else { throw CancellationError() }
                 try self.process.run()
                 self.read(stdout.fileHandleForReading, isError: false)
                 self.read(stderr.fileHandleForReading, isError: true)
@@ -145,6 +154,7 @@ private final class CommandExecution: @unchecked Sendable {
     }
 
     func cancel() {
+        cancellationLock.withLock { cancellationRequested = true }
         queue.async { [self] in
             self.cancelled = true
             // Cancellation may arrive before start installs the continuation.
@@ -163,6 +173,7 @@ private final class CommandExecution: @unchecked Sendable {
             while !self.finished {
                 let count = Darwin.read(fd, &buffer, buffer.count)
                 if count > 0 {
+                    if self.failure != nil { continue } // drain without retaining excess output
                     let size = isError ? self.errorOutput.count : self.output.count
                     guard size + count <= self.limit else {
                         self.stop(because: OrbStackError.outputTooLarge)
@@ -181,6 +192,10 @@ private final class CommandExecution: @unchecked Sendable {
                     return
                 } else {
                     self.stop(because: OrbStackError.commandFailed("Unable to read command output"))
+                    self.readers.first(where: { $0.handle == fd })?.cancel()
+                    if isError { self.errorEnded = true } else { self.outputEnded = true }
+                    self.completeIfReady()
+                    return
                 }
             }
         }
@@ -190,19 +205,34 @@ private final class CommandExecution: @unchecked Sendable {
     }
 
     private func stop(because error: any Error) {
-        guard !finished else { return }
+        guard !finished, failure == nil else { return }
+        failure = error
         if process.isRunning {
             process.terminate()
-            let process = self.process
-            queue.asyncAfter(deadline: .now() + 0.5) {
+            // Retain this execution until the child actually terminates. Returning
+            // early would unlock attach/detach while the old mutation still runs.
+            queue.asyncAfter(deadline: .now() + 0.5) { [self] in
                 if process.isRunning { kill(process.processIdentifier, SIGKILL) }
             }
         }
-        finish(.failure(error))
+        completeIfReady()
     }
 
     private func completeIfReady() {
-        guard !finished, let status, outputEnded, errorEnded else { return }
+        guard !finished, let status else { return }
+        guard outputEnded, errorEnded else {
+            if failure != nil, !drainDeadlineScheduled {
+                drainDeadlineScheduled = true
+                // An inherited pipe can outlive the process. On failure only,
+                // bound its drain AFTER termination, then close it explicitly.
+                queue.asyncAfter(deadline: .now() + 0.2) { [self] in
+                    guard let failure, !finished else { return }
+                    finish(.failure(failure))
+                }
+            }
+            return
+        }
+        if let failure { finish(.failure(failure)); return }
         let result = CLIResult(stdout: String(decoding: output, as: UTF8.self),
                                stderr: String(decoding: errorOutput, as: UTF8.self),
                                terminationStatus: status, duration: Date().timeIntervalSince(started))

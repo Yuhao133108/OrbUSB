@@ -1,4 +1,5 @@
 import XCTest
+import Darwin
 #if SWIFT_PACKAGE
 @testable import OrbUSBCore
 #else
@@ -201,6 +202,46 @@ final class OrbUSBTests: XCTestCase {
         task.cancel()
         do { _ = try await task.value; XCTFail("Expected cancellation") }
         catch is CancellationError { }
+    }
+
+    func testCancellationAndTimeoutWaitForTermResistantProcessExit() async throws {
+        for cancel in [true, false] {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let pidFile = directory.appendingPathComponent("pid")
+            // Builtins only: no grandchildren, and SIGTERM intentionally ignored.
+            let task = Task {
+                try await OrbCLI().run(executable: URL(fileURLWithPath: "/bin/sh"),
+                    arguments: ["-c", "trap '' TERM; echo $$ > \"$1\"; while :; do :; done", "fixture", pidFile.path],
+                    timeout: cancel ? 5 : 0.3)
+            }
+            let deadline = ContinuousClock.now + .seconds(3)
+            while !FileManager.default.fileExists(atPath: pidFile.path), ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            let pidText = try String(contentsOf: pidFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+            let pid = try XCTUnwrap(Int32(pidText))
+            if cancel { task.cancel() }
+            do { _ = try await task.value; XCTFail("Expected failure") }
+            catch {
+                if cancel { XCTAssertTrue(error is CancellationError) }
+                else { XCTAssertEqual(error as? OrbStackError, .timedOut) }
+            }
+            XCTAssertEqual(kill(pid, 0), -1, "Returning must not release a transaction while its child still runs")
+            XCTAssertEqual(errno, ESRCH)
+        }
+    }
+
+    func testLaunchValidationCanAbortBeforeAnyChildSideEffect() async throws {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: path) }
+        do {
+            _ = try await OrbCLI().run(executable: URL(fileURLWithPath: "/usr/bin/touch"),
+                arguments: [path.path], beforeLaunch: { throw USBStorageError.storageReappeared })
+            XCTFail("Final validation must veto process launch")
+        } catch { XCTAssertEqual(error as? USBStorageError, .storageReappeared) }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: path.path))
     }
 
     #if !SWIFT_PACKAGE

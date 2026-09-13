@@ -1,6 +1,8 @@
 import Foundation
 
 enum USBOperationPhase: String, Sendable {
+    case ejecting = "Ejecting disks"
+    case waitingForStorageRelease = "Waiting for storage to become idle"
     case waitingForMount = "Waiting for macOS"
     case verifyingUnmount = "Verifying volumes"
     case settling = "Preparing"
@@ -9,6 +11,11 @@ enum USBOperationPhase: String, Sendable {
     case resolvingUSBID = "Re-resolving OrbStack USB ID"
     case attaching = "Attaching"
     case detaching = "Detaching"
+    case recovering = "Recovering"
+}
+
+enum USBTransferState: String, Sendable {
+    case idle, preparing, ejecting, waitingForStorageRelease, attaching, attached, detaching, failed
 }
 
 struct USBDeviceOperation {
@@ -16,7 +23,10 @@ struct USBDeviceOperation {
     var phase: USBOperationPhase
 
     func matches(_ other: USBDevice) -> Bool {
-        device.id == other.id || device.hasSameSerialIdentity(as: other)
+        if let identity = device.hostIdentity, let otherIdentity = other.hostIdentity {
+            return identity.sameConnection(as: otherIdentity, requireGeneration: true)
+        }
+        return device.id == other.id || device.hasSameSerialIdentity(as: other)
     }
 }
 
@@ -47,6 +57,10 @@ struct USBDevice: Identifiable, Equatable, Sendable {
     var type: String?
     var enumeration: Int?
     var detailError: String?
+    var hostIdentity: USBHostIdentity?
+    var hostBindingState: HostBindingState = .unknown
+    var recoveryEligibility: RecoveryEligibility?
+    var recoveryError: String?
 
     var vidPID: String { "\(vendorID ?? "—"):\(productID ?? "—")" }
     var preferenceKey: String {
@@ -61,6 +75,7 @@ struct USBDevice: Identifiable, Equatable, Sendable {
         return "id:" + id
     }
     var connectionKey: String { "\(id)|\(preferenceKey)|\(enumeration ?? -1)" }
+    var mutationKey: String { UInt32(id, radix: 16).map { String($0, radix: 16) } ?? id }
     var isStorage: Bool {
         ["storage", "massstorage"].contains(type?.lowercased() ?? "")
     }
@@ -90,7 +105,7 @@ struct USBDevice: Identifiable, Equatable, Sendable {
         switch type?.lowercased() {
         case "massstorage", "storage": "externaldrive"
         case "audio": "headphones"
-        case "network": "network"
+        case "network", "ethernet": "network"
         default: "cable.connector"
         }
     }

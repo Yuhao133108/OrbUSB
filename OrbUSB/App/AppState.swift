@@ -18,6 +18,7 @@ final class AppState {
     var debugVisible = false
     var operations: [String: USBDeviceOperation] = [:]
     var rowErrors: [String: String] = [:]
+    var recoveryNotice: String?
 
     let preferences: Preferences
     var monitoringAvailable = true
@@ -28,6 +29,8 @@ final class AppState {
     @ObservationIgnored private var polling: Task<Void, Never>?
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
     @ObservationIgnored private var refreshAgain = false
+    @ObservationIgnored private var mutationRevision: UInt64 = 0
+    @ObservationIgnored private var hostReturnTask: Task<Void, Never>?
 
     init(service: OrbStackUSBService = OrbStackUSBService(), preferences: Preferences = Preferences(), startMonitoring: Bool = true) {
         self.service = service
@@ -38,6 +41,7 @@ final class AppState {
     func configureUSBMonitor() {
         monitor.stop()
         hotplugTask?.cancel()
+        hostReturnTask?.cancel()
         monitoringAvailable = true
         guard preferences.enableUSBMonitoring else { return }
         monitoringAvailable = monitor.start { [weak self] in
@@ -57,6 +61,7 @@ final class AppState {
         operationTasks.values.forEach { $0.cancel() }
         monitor.stop()
         hotplugTask?.cancel()
+        hostReturnTask?.cancel()
     }
 
     func openMenu() {
@@ -83,6 +88,7 @@ final class AppState {
     }
 
     func requestRefresh(force: Bool = false) {
+        guard operations.isEmpty else { refreshAgain = true; return }
         if isRefreshing {
             if force { refreshAgain = true }
             return
@@ -93,9 +99,15 @@ final class AppState {
             guard let self else { return }
             while true {
                 let start = Date()
+                let revision = self.mutationRevision
                 do {
-                    let list = try await self.service.refresh()
+                    let list = await self.service.hostStatus(for: try await self.service.refresh())
+                    guard revision == self.mutationRevision, self.operations.isEmpty else {
+                        self.refreshAgain = true
+                        break
+                    }
                     self.devices = list
+                    self.scheduleHostReturnCheck(list)
                     let currentKeys = Set(list.map(\.connectionKey))
                     self.rowErrors = self.rowErrors.filter { currentKeys.contains($0.key) }
                     self.error = nil
@@ -109,6 +121,7 @@ final class AppState {
                     }
                     Log.usb.debug("Refreshed \(list.count) USB devices")
                 } catch {
+                    guard revision == self.mutationRevision, self.operations.isEmpty else { break }
                     self.error = error.localizedDescription
                     self.diagnostic = (error as? OrbStackError)?.diagnostic ?? error.localizedDescription
                     // Preserve the last snapshot for context; actions are disabled while stale.
@@ -124,15 +137,20 @@ final class AppState {
     }
 
     func toggle(_ displayed: USBDevice, machine: String? = nil) {
-        guard error == nil, operation(for: displayed) == nil,
+        guard error == nil, operations.isEmpty,
               displayed.state == .available || displayed.state == .attached else { return }
+        mutationRevision &+= 1
         let attaching = displayed.state == .available
         let key = displayed.connectionKey
         operations[key] = USBDeviceOperation(device: displayed,
             phase: attaching ? (displayed.isStorage ? .resolvingDisk : .attaching) : .detaching)
         rowErrors[key] = nil
         operationTasks[key] = Task {
-            defer { operations[key] = nil; operationTasks[key] = nil }
+            defer {
+                operations[key] = nil; operationTasks[key] = nil
+                mutationRevision &+= 1
+                requestRefresh(force: true)
+            }
             var failure: String?
             do {
                 if attaching {
@@ -161,8 +179,7 @@ final class AppState {
                 failure = "\(attaching ? "Attach" : "Detach") failed\n\(error.localizedDescription)"
             }
             // Even failed commands may have changed host state. Never infer success locally.
-            requestRefresh(force: true)
-            await refreshTask?.value
+            await refreshAfterMutation()
             if let failure {
                 // Keep errors on the current row if unmount changed its OrbStack ID.
                 let matches = devices.filter { $0.connectionKey == key || displayed.hasSameSerialIdentity(as: $0) }
@@ -173,6 +190,81 @@ final class AppState {
 
     func operation(for device: USBDevice) -> USBDeviceOperation? {
         operations.values.first { $0.matches(device) }
+    }
+
+    func recover(_ displayed: USBDevice) {
+        guard error == nil, operations.isEmpty, displayed.hostBindingState == .driverUnavailable,
+              displayed.recoveryEligibility == .eligible else { return }
+        let key = displayed.connectionKey
+        recoveryNotice = nil
+        mutationRevision &+= 1
+        operations[key] = USBDeviceOperation(device: displayed, phase: .recovering)
+        rowErrors[key] = nil
+        operationTasks[key] = Task {
+            defer {
+                operations[key] = nil; operationTasks[key] = nil
+                mutationRevision &+= 1
+                requestRefresh(force: true)
+            }
+            var failure: String?
+            do {
+                let result = try await service.recoverDevice(displayed)
+                if let index = devices.firstIndex(where: { $0.hostIdentity == displayed.hostIdentity }) {
+                    devices[index].hostIdentity = result.after.identity
+                    devices[index].hostBindingState = .available
+                    devices[index].recoveryEligibility = .alreadyRecovered
+                }
+            } catch {
+                failure = error.localizedDescription
+                rowErrors[key] = "Recovery failed\n\(error.localizedDescription)"
+                if let index = devices.firstIndex(where: { $0.hostIdentity == displayed.hostIdentity }) {
+                    devices[index].hostBindingState = .failed
+                    devices[index].recoveryError = error.localizedDescription
+                }
+            }
+            await refreshAfterMutation()
+            if let failure {
+                let current = devices.first {
+                    guard let original = displayed.hostIdentity, let identity = $0.hostIdentity else { return false }
+                    return $0.hostBindingState == .failed && $0.recoveryError == failure
+                        && original.sameConnection(as: identity, requireGeneration: false)
+                }
+                if let current {
+                    rowErrors[key] = nil
+                    rowErrors[current.connectionKey] = "Recovery failed\n\(failure)"
+                } else {
+                    // Unplug/replacement can remove the row entirely. Preserve the outcome visibly.
+                    recoveryNotice = "\(displayed.name): Recovery failed\n\(failure)"
+                }
+            }
+        }
+    }
+
+    private func refreshAfterMutation() async {
+        // Keep actions locked until a fresh post-command snapshot has been published.
+        // A refresh that began before the mutation is drained and discarded by its revision check.
+        await refreshTask?.value
+        do {
+            let list = await service.hostStatus(for: try await service.listDevices())
+            devices = list
+            error = nil
+            hasLoaded = true
+            lastRefreshDate = Date()
+            refreshAgain = false
+            scheduleHostReturnCheck(list)
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func scheduleHostReturnCheck(_ list: [USBDevice]) {
+        hostReturnTask?.cancel()
+        guard list.contains(where: { $0.hostBindingState == .returning }) else { return }
+        hostReturnTask = Task { [weak self] in
+            // A bounded observation deadline, never a reset trigger or a readiness assertion.
+            do { try await Task.sleep(for: .seconds(8)) } catch { return }
+            self?.requestRefresh(force: true)
+        }
     }
 
     func openOrbStack() {

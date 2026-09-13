@@ -37,6 +37,12 @@ struct DeviceRow: View {
                             if let operation = state.operation(for: device) {
                                 Text(operation.phase.rawValue + "…")
                                     .font(.caption).foregroundStyle(.secondary)
+                            } else if device.state == .attached {
+                                Text("Attached to \(device.passthroughMachine ?? "Linux")")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            } else if device.state == .available {
+                                Text(device.hostBindingState.rawValue)
+                                    .font(.caption).foregroundStyle(.secondary)
                             }
                         }
                         Spacer(minLength: 0)
@@ -54,7 +60,7 @@ struct DeviceRow: View {
                         .buttonStyle(QuietUtilityButtonStyle())
                         .controlSize(.small)
                         .frame(width: 64)
-                        .disabled(state.error != nil)
+                        .disabled(state.error != nil || !state.operations.isEmpty)
                         .accessibilityLabel("\(device.state == .attached ? "Detach" : "Attach") \(device.name)")
                 } else {
                     Image(systemName: device.state == .forwarded ? "link" : "questionmark.circle")
@@ -63,7 +69,19 @@ struct DeviceRow: View {
                 }
             }
             .frame(minHeight: 52)
-            if let error = state.rowErrors[device.connectionKey] ?? device.detailError {
+            if device.hostBindingState == .driverUnavailable, state.operation(for: device) == nil {
+                Button("Recover on Mac") { state.recover(device) }
+                    .font(.caption)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .padding(.leading, 32)
+                    .padding(.bottom, 4)
+                    .disabled(device.recoveryEligibility != .eligible || !state.operations.isEmpty || state.error != nil)
+                if case .ineligible(let reason) = device.recoveryEligibility {
+                    Text(reason.localizedDescription).font(.caption2).foregroundStyle(.secondary).padding(.leading, 32)
+                }
+            }
+            if let error = state.rowErrors[device.connectionKey] ?? device.recoveryError ?? device.detailError {
                 Text(error).font(.caption).foregroundStyle(.red).padding(.leading, 32).padding(.bottom, 6)
             }
             if expanded {
@@ -96,7 +114,11 @@ struct DeviceRow: View {
             if device.state == .available || device.state == .attached {
                 Divider()
                 Button(device.state == .attached ? "Detach" : "Attach") { state.toggle(device, machine: machine) }
-                    .disabled(state.operation(for: device) != nil || state.error != nil)
+                    .disabled(!state.operations.isEmpty || state.error != nil)
+            }
+            if device.hostBindingState == .driverUnavailable {
+                Button("Recover on Mac") { state.recover(device) }
+                    .disabled(device.recoveryEligibility != .eligible || !state.operations.isEmpty || state.error != nil)
             }
         }
     }
@@ -105,4 +127,23 @@ struct DeviceRow: View {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(value, forType: .string)
     }
+}
+
+#Preview("Recover on Mac") {
+    let state = AppState(startMonitoring: false)
+    let device = USBDevice(id: "fixture", name: "Realtek USB 2.5GbE", state: .available,
+                           type: "Ethernet", hostBindingState: .driverUnavailable, recoveryEligibility: .eligible)
+    state.devices = [device]
+    state.hasLoaded = true
+    return MenuBarView(state: state, observesMenu: false)
+}
+
+#Preview("Recovering on Mac") {
+    let state = AppState(startMonitoring: false)
+    let device = USBDevice(id: "fixture", name: "Realtek RTL9210C", state: .available,
+                           type: "Storage", hostBindingState: .recovering)
+    state.devices = [device]
+    state.operations[device.connectionKey] = USBDeviceOperation(device: device, phase: .recovering)
+    state.hasLoaded = true
+    return MenuBarView(state: state, observesMenu: false)
 }
